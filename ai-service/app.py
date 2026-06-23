@@ -4,6 +4,7 @@ import os
 from services.geocoding import get_bbox_from_postal_code
 from services.scraper import query_overpass
 from services.scraper import build_overpass_query
+from services.scraper import normalize_osm_results
 
 
 
@@ -12,6 +13,19 @@ from services.scraper import build_overpass_query
 load_dotenv()
 
 app = Flask(__name__)
+
+@app.route("/test/normalize/<postal_code>/<category>", methods=["GET"])
+def test_normalize(postal_code, category):
+    bbox = get_bbox_from_postal_code(postal_code)
+    if bbox is None:
+        return jsonify({"error": "Code postal non trouvé"}), 404
+    raw = query_overpass(bbox, category)
+    normalized = normalize_osm_results(raw, postal_code)
+    return jsonify({
+        "total_raw": len(raw.get("elements", [])),
+        "total_normalized": len(normalized),
+        "sample": normalized[:3]
+    }), 200
 
 @app.route("/debug/overpass-query/<postal_code>/<category>", methods=["GET"])
 def debug_overpass_query(postal_code, category):
