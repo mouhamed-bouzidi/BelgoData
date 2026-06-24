@@ -30,6 +30,49 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /api/prospects/stats - statistiques agrégées pour le Dashboard
+router.get("/stats", async (req, res) => {
+  try {
+    const total = await Prospect.countDocuments();
+    const emailsCount = await Prospect.countDocuments({ email: { $ne: null } });
+    const websitesCount = await Prospect.countDocuments({ website: { $ne: null } });
+
+    // Répartition par catégorie
+    const byCategory = await Prospect.aggregate([
+      { $group: { _id: "$category", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Répartition par source
+    const bySource = await Prospect.aggregate([
+      { $group: { _id: "$source", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]);
+
+    // Répartition par code postal (proxy pour la géo, en attendant la province)
+    const byPostcode = await Prospect.aggregate([
+      { $group: { _id: "$address.postcode", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]);
+
+    // Derniers prospects ajoutés
+    const recent = await Prospect.find().sort({ createdAt: -1 }).limit(5);
+
+    res.json({
+      total,
+      emailsCount,
+      websitesCount,
+      byCategory,
+      bySource,
+      byPostcode,
+      recent,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/prospects/:id
 router.get("/:id", async (req, res) => {
   try {
