@@ -1,10 +1,11 @@
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 import os
-
 from services.geocoding import get_bbox_from_postal_code
 from services.scraper import query_overpass, normalize_osm_results
 from services.db import insert_prospects
+from agent.graph import agent_graph
+
 
 load_dotenv()
 
@@ -44,6 +45,37 @@ def scrape_osm():
         "inserted": summary["inserted"],
         "skipped_duplicates": summary["skipped"],
     }), 200
+
+@app.route("/agent/chat", methods=["POST"])
+def agent_chat():
+    body = request.get_json(silent=True) or {}
+    user_query = body.get("message")
+
+    if not user_query:
+        return jsonify({"error": "Le champ 'message' est requis"}), 400
+
+    initial_state = {
+        "user_query": user_query,
+        "intent": None,
+        "postal_code": None,
+        "category": None,
+        "company_name": None,
+        "scraped_count": None,
+        "prospects_sample": None,
+        "response": None,
+        "suggested_actions": None,
+    }
+
+    result = agent_graph.invoke(initial_state)
+
+    return jsonify({
+        "response": result.get("response"),
+        "intent": result.get("intent"),
+        "suggested_actions": result.get("suggested_actions", []),
+        "prospects_sample": result.get("prospects_sample", []),
+        "scraped_count": result.get("scraped_count"),
+    }), 200
+
 
 
 if __name__ == "__main__":
