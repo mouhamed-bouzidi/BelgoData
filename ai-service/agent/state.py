@@ -17,3 +17,4 @@ class AgentState(TypedDict):
 
     response: Optional[str]
     suggested_actions: Optional[List[str]]
+    report: Optional[dict] 

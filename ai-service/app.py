@@ -90,6 +90,7 @@ def agent_chat():
         "suggested_actions": result.get("suggested_actions", []),
         "prospects_sample": prospects_sample, # Utilise la version sérialisée ici !
         "scraped_count": result.get("scraped_count"),
+        "report": result.get("report")
     }), 200
 
 if __name__ == "__main__":

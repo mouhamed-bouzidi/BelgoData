@@ -6,6 +6,7 @@ from services.geocoding import get_bbox_from_postal_code, get_postal_code_from_c
 from services.scraper import query_overpass, normalize_osm_results, CATEGORY_TAGS
 from services.db import insert_prospects, get_db, mongo_to_json_safe
 from services.geocoding import get_bbox_from_location
+from datetime import datetime, timezone
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -44,9 +45,10 @@ Historique de conversation (du plus ancien au plus récent):
 {history}
 
 {{
-  "intent": "scrape" | "list" | "general",
+  "intent": "scrape" | "list" | "report" | "general",
   "location": "code postal (4 chiffres) OU nom de ville belge mentionné, sinon null",
   "category": "une des catégories disponibles, déduite intelligemment même si le terme exact n'y est pas (ex: 'école' -> 'ecole', 'avocat' -> 'avocat'), sinon null"
+  "company_name": "nom de l'entreprise mentionnée si l'utilisateur demande un bilan/rapport, sinon null",
 }}
 
 Règles:
@@ -107,6 +109,7 @@ def classify_intent_node(state: AgentState) -> AgentState:
     state["intent"] = parsed.get("intent", "general")
     state["postal_code"] = parsed.get("location")
     state["category"] = parsed.get("category")
+    state["company_name"] = parsed.get("company_name")
     return state
 
 def scrape_node(state: AgentState) -> AgentState:
@@ -214,4 +217,108 @@ def clarify_node(state: AgentState) -> AgentState:
         "Cafés à 2000 Anvers",
         "Pharmacies à 5000 Namur",
     ]
+    return state
+
+
+
+
+
+REPORT_PROMPT = """Tu es un expert en analyse de prospection B2B en Belgique.
+Voici les données brutes d'une entreprise issues d'OpenStreetMap :
+
+Nom: {name}
+Catégorie: {category}
+Adresse: {address}
+Téléphone: {phone}
+Email: {email}
+Site web: {website}
+
+Génère une analyse de prospection au format JSON STRICT (rien d'autre, pas de markdown), avec cette structure exacte:
+{{
+  "score": <entier 0-100, basé sur la complétude des données et le potentiel commercial>,
+  "presence_digitale": "Bonne" | "Moyenne" | "Faible",
+  "analyse": "<2-3 phrases d'analyse synthétique>",
+  "forces": ["<force1>", "<force2>", "<force3>"],
+  "faiblesses": ["<faiblesse1>", "<faiblesse2>", "<faiblesse3>"],
+  "argumentaire": "<2-3 phrases suggérant comment approcher cette entreprise commercialement>"
+}}
+
+Base le score sur: présence d'un téléphone (+20), email (+15), site web (+20), adresse complète (+15), le reste sur la pertinence du secteur pour de la prospection B2B (+30 max).
+"""
+
+
+def generate_report_node(state: AgentState) -> AgentState:
+    db = get_db()
+    collection = db["prospects"]
+
+    company_name = state.get("company_name")
+    if not company_name:
+        state["response"] = "Quelle entreprise voulez-vous analyser ? Donnez-moi son nom exact."
+        state["suggested_actions"] = []
+        return state
+
+    prospect = collection.find_one({"name": {"$regex": company_name, "$options": "i"}})
+    if not prospect:
+        state["response"] = f"Je n'ai pas trouvé '{company_name}' dans la base de prospects."
+        state["suggested_actions"] = []
+        return state
+
+    address_str = ", ".join(filter(None, [
+        prospect.get("address", {}).get("street"),
+        prospect.get("address", {}).get("city"),
+        prospect.get("address", {}).get("postcode"),
+    ])) or "Non renseignée"
+
+    prompt = REPORT_PROMPT.format(
+        name=prospect.get("name"),
+        category=prospect.get("category"),
+        address=address_str,
+        phone=prospect.get("phone") or "Non renseigné",
+        email=prospect.get("email") or "Non renseigné",
+        website=prospect.get("website") or "Non renseigné",
+    )
+
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+
+    raw = completion.choices[0].message.content.strip()
+    try:
+        analysis = json.loads(raw)
+    except json.JSONDecodeError:
+        analysis = {
+            "score": 50, "presence_digitale": "Moyenne",
+            "analyse": "Analyse non disponible.", "forces": [], "faiblesses": [],
+            "argumentaire": "",
+        }
+
+    report_doc = {
+        "prospect_id": str(prospect["_id"]),
+        "name": prospect.get("name"),
+        "category": prospect.get("category"),
+        "address": prospect.get("address"),
+        "phone": prospect.get("phone"),
+        "email": prospect.get("email"),
+        "website": prospect.get("website"),
+        "source": prospect.get("source"),
+        "score": analysis.get("score", 50),
+        "presence_digitale": analysis.get("presence_digitale", "Moyenne"),
+        "analyse": analysis.get("analyse", ""),
+        "forces": analysis.get("forces", []),
+        "faiblesses": analysis.get("faiblesses", []),
+        "argumentaire": analysis.get("argumentaire", ""),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+
+    reports_collection = db["reports"]
+    result = reports_collection.insert_one(report_doc)
+    report_doc["_id"] = str(result.inserted_id)
+
+    state["report"] = report_doc
+    state["response"] = (
+        f"Bilan généré pour {prospect.get('name')} — score de prospection : {analysis.get('score')}/100."
+    )
+    state["suggested_actions"] = []
     return state

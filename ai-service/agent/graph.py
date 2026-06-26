@@ -5,6 +5,7 @@ from agent.nodes import (
     scrape_node,
     list_prospects_node,
     general_node,
+    generate_report_node,
 )
 
 
@@ -14,8 +15,9 @@ def route_by_intent(state: AgentState) -> str:
         return "scrape"
     elif intent == "list":
         return "list"
-    else:
-        return "general"
+    elif intent == "report":
+        return "generate_report"
+    return "general"
 
 
 def build_agent_graph():
@@ -25,6 +27,7 @@ def build_agent_graph():
     graph.add_node("scrape", scrape_node)
     graph.add_node("list", list_prospects_node)
     graph.add_node("general", general_node)
+    graph.add_node("generate_report", generate_report_node)
 
     graph.set_entry_point("classify_intent")
 
@@ -34,16 +37,17 @@ def build_agent_graph():
         {
             "scrape": "scrape",
             "list": "list",
+            "generate_report": "generate_report",
             "general": "general",
         },
     )
 
     graph.add_edge("scrape", END)
     graph.add_edge("list", END)
+    graph.add_edge("generate_report", END)
     graph.add_edge("general", END)
 
     return graph.compile()
 
 
-# Compilé une seule fois au démarrage de l'app
 agent_graph = build_agent_graph()
