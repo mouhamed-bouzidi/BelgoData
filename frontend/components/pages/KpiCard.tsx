@@ -1,5 +1,7 @@
+import { LucideIcon } from "lucide-react";
+
 interface KpiCardProps {
-  icon: string;
+  icon: LucideIcon;
   label: string;
   value: string | number;
   trend?: string;
@@ -15,7 +17,7 @@ const colorMap = {
 };
 
 export default function KpiCard({
-  icon,
+  icon: Icon,
   label,
   value,
   trend,
@@ -24,9 +26,9 @@ export default function KpiCard({
   return (
     <div className="bg-card-bg border border-border-color rounded-xl p-5 flex items-center gap-4">
       <div
-        className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl ${colorMap[color]}`}
+        className={`w-12 h-12 rounded-xl flex items-center justify-center ${colorMap[color]}`}
       >
-        {icon}
+        <Icon size={22} strokeWidth={2} />
       </div>
       <div>
         <div className="text-sm text-gray-500">{label}</div>

@@ -2,20 +2,39 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  MessageSquare,
+  LayoutDashboard,
+  Building2,
+  FileText,
+  Upload,
+  Users,
+  Settings,
+  Search,
+  Globe,
+  LogOut,
+  type LucideIcon,
+} from "lucide-react";
 
-const navItems = [
-  { label: "Agent IA", href: "/agent", icon: "💬" },
-  { label: "Dashboard", href: "/dashboard", icon: "📊" },
-  { label: "Prospects", href: "/prospects", icon: "🏢" },
-  { label: "Rapports & Bilans", href: "/rapports", icon: "📄" },
-  { label: "Exports", href: "/exports", icon: "⬆️" },
-  { label: "Utilisateurs", href: "/utilisateurs", icon: "👥" },
-  { label: "Paramètres", href: "/parametres", icon: "⚙️" },
+interface NavItem {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+const navItems: NavItem[] = [
+  { label: "Agent IA", href: "/agent", icon: MessageSquare },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Prospects", href: "/prospects", icon: Building2 },
+  { label: "Rapports & Bilans", href: "/rapports", icon: FileText },
+  { label: "Exports", href: "/exports", icon: Upload },
+  { label: "Utilisateurs", href: "/utilisateurs", icon: Users },
+  { label: "Paramètres", href: "/parametres", icon: Settings },
 ];
 
-const toolItems = [
-  { label: "Recherche avancée", href: "/recherche", icon: "🔍" },
-  { label: "Scraping OSM", href: "/scraping", icon: "🌍" },
+const toolItems: NavItem[] = [
+  { label: "Recherche avancée", href: "/recherche", icon: Search },
+  { label: "Scraping OSM", href: "/scraping", icon: Globe },
 ];
 
 export default function Sidebar() {
@@ -25,11 +44,11 @@ export default function Sidebar() {
     <aside className="w-[240px] h-screen bg-sidebar-bg text-white flex flex-col fixed left-0 top-0">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent to-blue flex items-center justify-center text-lg">
-          🏢
+        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent to-blue flex items-center justify-center">
+          <Building2 size={18} strokeWidth={2.2} className="text-white" />
         </div>
         <div>
-          <div className="font-semibold text-sm">BelgoData IA</div>
+          <div className="font-semibold text-sm">BelgoData</div>
           <div className="text-xs text-white/50">Belgique</div>
         </div>
       </div>
@@ -39,6 +58,7 @@ export default function Sidebar() {
         <ul className="space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+            const Icon = item.icon;
             return (
               <li key={item.href}>
                 <Link
@@ -49,7 +69,7 @@ export default function Sidebar() {
                       : "text-white/70 hover:bg-sidebar-hover hover:text-white"
                   }`}
                 >
-                  <span>{item.icon}</span>
+                  <Icon size={18} strokeWidth={2} />
                   <span>{item.label}</span>
                 </Link>
               </li>
@@ -62,6 +82,7 @@ export default function Sidebar() {
           <ul className="space-y-1">
             {toolItems.map((item) => {
               const isActive = pathname === item.href;
+              const Icon = item.icon;
               return (
                 <li key={item.href}>
                   <Link
@@ -72,7 +93,7 @@ export default function Sidebar() {
                         : "text-white/70 hover:bg-sidebar-hover hover:text-white"
                     }`}
                   >
-                    <span>{item.icon}</span>
+                    <Icon size={18} strokeWidth={2} />
                     <span>{item.label}</span>
                   </Link>
                 </li>
@@ -97,7 +118,7 @@ export default function Sidebar() {
           </div>
         </div>
         <button className="w-full mt-2 flex items-center gap-2 px-3 py-2.5 text-sm text-white/70 hover:bg-sidebar-hover rounded-lg transition-colors">
-          <span>🚪</span>
+          <LogOut size={18} strokeWidth={2} />
           <span>Déconnexion</span>
         </button>
       </div>

@@ -1,5 +1,5 @@
 "use client";
-
+import { Building2, Mail, Globe, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import KpiCard from "@/components/pages/KpiCard";
@@ -86,16 +86,16 @@ export default function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard icon="🏢" label="Total entreprises" value={stats.total} color="accent" />
-        <KpiCard icon="📧" label="Emails trouvés" value={stats.emailsCount} color="blue" />
-        <KpiCard icon="🌐" label="Sites web trouvés" value={stats.websitesCount} color="green" />
-        <KpiCard
-          icon="📍"
-          label="Codes postaux couverts"
-          value={stats.byPostcode.length}
-          color="orange"
-        />
-      </div>
+  <KpiCard icon={Building2} label="Total entreprises" value={stats.total} color="accent" />
+  <KpiCard icon={Mail} label="Emails trouvés" value={stats.emailsCount} color="blue" />
+  <KpiCard icon={Globe} label="Sites web trouvés" value={stats.websitesCount} color="green" />
+  <KpiCard
+    icon={MapPin}
+    label="Codes postaux couverts"
+    value={stats.byPostcode.length}
+    color="orange"
+  />
+</div>
 
       <div className="grid grid-cols-2 gap-4 mb-6">
         {/* Répartition par secteur */}

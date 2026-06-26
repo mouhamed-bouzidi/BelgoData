@@ -5,11 +5,12 @@ from services.geocoding import get_bbox_from_postal_code
 from services.scraper import query_overpass, normalize_osm_results
 from services.db import insert_prospects
 from agent.graph import agent_graph
-
+from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)
 
 
 @app.route("/health", methods=["GET"])
@@ -46,16 +47,28 @@ def scrape_osm():
         "skipped_duplicates": summary["skipped"],
     }), 200
 
+# ... (le reste de tes imports et routes reste inchangé)
+
+def serialize_mongo_data(obj):
+    """Convertit récursivement les ObjectId en string pour éviter le crash JSON."""
+    if isinstance(obj, list):
+        return [serialize_mongo_data(item) for item in obj]
+    if isinstance(obj, dict):
+        return {k: (str(v) if k == "_id" or v.__class__.__name__ == "ObjectId" else serialize_mongo_data(v)) for k, v in obj.items()}
+    return obj
+
 @app.route("/agent/chat", methods=["POST"])
 def agent_chat():
     body = request.get_json(silent=True) or {}
     user_query = body.get("message")
+    history = body.get("history", [])
 
     if not user_query:
         return jsonify({"error": "Le champ 'message' est requis"}), 400
 
     initial_state = {
         "user_query": user_query,
+        "history": history,
         "intent": None,
         "postal_code": None,
         "category": None,
@@ -68,15 +81,16 @@ def agent_chat():
 
     result = agent_graph.invoke(initial_state)
 
+    # Nettoyage des prospects_sample pour convertir les ObjectId avant le jsonify
+    prospects_sample = serialize_mongo_data(result.get("prospects_sample", []))
+
     return jsonify({
         "response": result.get("response"),
         "intent": result.get("intent"),
         "suggested_actions": result.get("suggested_actions", []),
-        "prospects_sample": result.get("prospects_sample", []),
+        "prospects_sample": prospects_sample, # Utilise la version sérialisée ici !
         "scraped_count": result.get("scraped_count"),
     }), 200
-
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT_AI", 5001))

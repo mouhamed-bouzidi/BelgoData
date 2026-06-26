@@ -1,8 +1,26 @@
 from pymongo import MongoClient
 import os
+from bson import ObjectId
+from datetime import datetime
+
 
 _client = None
 _db = None
+
+def mongo_to_json_safe(obj):
+    """
+    Convertit récursivement un document Mongo (dict/list) en structure
+    100% JSON-sérialisable, en remplaçant ObjectId et datetime par des strings.
+    """
+    if isinstance(obj, dict):
+        return {k: mongo_to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [mongo_to_json_safe(item) for item in obj]
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
 
 
 def get_db():
