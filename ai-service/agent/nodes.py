@@ -7,6 +7,7 @@ from services.scraper import query_overpass, normalize_osm_results, CATEGORY_TAG
 from services.db import insert_prospects, get_db, mongo_to_json_safe
 from services.geocoding import get_bbox_from_location
 from datetime import datetime, timezone
+from services.web_search import search_company_web, format_web_context
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
@@ -224,8 +225,8 @@ def clarify_node(state: AgentState) -> AgentState:
 
 
 REPORT_PROMPT = """Tu es un expert en analyse de prospection B2B en Belgique.
-Voici les données brutes d'une entreprise issues d'OpenStreetMap :
 
+=== DONNÉES INTERNES (base de données) ===
 Nom: {name}
 Catégorie: {category}
 Adresse: {address}
@@ -233,17 +234,21 @@ Téléphone: {phone}
 Email: {email}
 Site web: {website}
 
+=== INFORMATIONS COMPLÉMENTAIRES (recherche web) ===
+{web_context}
+
 Génère une analyse de prospection au format JSON STRICT (rien d'autre, pas de markdown), avec cette structure exacte:
 {{
-  "score": <entier 0-100, basé sur la complétude des données et le potentiel commercial>,
+  "score": <entier 0-100, basé sur la complétude des données ET les informations web trouvées>,
   "presence_digitale": "Bonne" | "Moyenne" | "Faible",
-  "analyse": "<2-3 phrases d'analyse synthétique>",
+  "analyse": "<3-4 phrases, en t'appuyant sur les données internes ET le contexte web>",
   "forces": ["<force1>", "<force2>", "<force3>"],
   "faiblesses": ["<faiblesse1>", "<faiblesse2>", "<faiblesse3>"],
   "argumentaire": "<2-3 phrases suggérant comment approcher cette entreprise commercialement>"
 }}
 
-Base le score sur: présence d'un téléphone (+20), email (+15), site web (+20), adresse complète (+15), le reste sur la pertinence du secteur pour de la prospection B2B (+30 max).
+Base le score sur: téléphone (+15), email (+10), site web (+15), adresse complète (+10), pertinence du secteur (+20 max), qualité/quantité des informations web trouvées (+30 max).
+Si les informations web sont vides ou non pertinentes, base-toi uniquement sur les données internes et indique une présence digitale plus faible.
 """
 
 
@@ -269,6 +274,12 @@ def generate_report_node(state: AgentState) -> AgentState:
         prospect.get("address", {}).get("postcode"),
     ])) or "Non renseignée"
 
+    web_results = search_company_web(
+        name=prospect.get("name"),
+        city=prospect.get("address", {}).get("city"),
+    )
+    web_context = format_web_context(web_results)
+
     prompt = REPORT_PROMPT.format(
         name=prospect.get("name"),
         category=prospect.get("category"),
@@ -276,6 +287,7 @@ def generate_report_node(state: AgentState) -> AgentState:
         phone=prospect.get("phone") or "Non renseigné",
         email=prospect.get("email") or "Non renseigné",
         website=prospect.get("website") or "Non renseigné",
+        web_context=web_context,
     )
 
     completion = client.chat.completions.create(
@@ -309,6 +321,7 @@ def generate_report_node(state: AgentState) -> AgentState:
         "forces": analysis.get("forces", []),
         "faiblesses": analysis.get("faiblesses", []),
         "argumentaire": analysis.get("argumentaire", ""),
+        "web_sources": web_results,
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -318,7 +331,8 @@ def generate_report_node(state: AgentState) -> AgentState:
 
     state["report"] = report_doc
     state["response"] = (
-        f"Bilan généré pour {prospect.get('name')} — score de prospection : {analysis.get('score')}/100."
+        f"Bilan généré pour {prospect.get('name')} — score de prospection : {analysis.get('score')}/100 "
+        f"(enrichi avec {len(web_results)} source(s) web)."
     )
     state["suggested_actions"] = []
     return state
