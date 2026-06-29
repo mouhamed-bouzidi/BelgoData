@@ -76,11 +76,31 @@ router.get("/stats", async (req, res) => {
 // GET /api/prospects/:id
 router.get("/:id", async (req, res) => {
   try {
-    const prospect = await Prospect.findById(req.params.id);
-    if (!prospect) {
-      return res.status(404).json({ error: "Prospect non trouvé" });
+    const { postal_code, category, source, search, email, score_min, page = 1, limit = 20 } = req.query;
+
+    const filter = {};
+    if (postal_code) filter["address.postcode"] = postal_code;
+    if (category) filter.category = category;
+    if (source) filter.source = source.toLowerCase();
+    if (email === "Disponible") filter.email = { $ne: null };
+    if (email === "Non disponible") filter.email = null;
+    if (score_min) filter.score = { $gte: Number(score_min) };
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
+      ];
     }
-    res.json(prospect);
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [prospects, total] = await Promise.all([
+      Prospect.find(filter).skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
+      Prospect.countDocuments(filter),
+    ]);
+
+    res.json({ total, page: Number(page), limit: Number(limit), results: prospects });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
