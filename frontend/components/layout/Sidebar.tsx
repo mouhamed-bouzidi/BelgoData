@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image"; 
 import { usePathname } from "next/navigation";
 import {
   MessageSquare,
@@ -15,6 +16,8 @@ import {
   LogOut,
   type LucideIcon,
 } from "lucide-react";
+
+
 
 interface NavItem {
   label: string;
@@ -44,8 +47,15 @@ export default function Sidebar() {
     <aside className="w-[240px] h-screen bg-sidebar-bg text-white flex flex-col fixed left-0 top-0">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-accent to-blue flex items-center justify-center">
-          <Building2 size={18} strokeWidth={2.2} className="text-white" />
+        <div className="relative w-13 h-15 rounded-lg overflow-hidden flex-shrink-0">
+          <Image
+            src="/logo1.png"
+            alt="BelgoData Logo"
+            fill
+            sizes="48px"
+            className="object-cover"
+            priority
+          />
         </div>
         <div>
           <div className="font-semibold text-sm">BelgoData</div>
@@ -57,7 +67,8 @@ export default function Sidebar() {
       <nav className="flex-1 px-3 py-4 overflow-y-auto">
         <ul className="space-y-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            // Un onglet est actif s'il y a égalité stricte OU si l'URL commence par cet href (ex: /rapports/[id])
+            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const Icon = item.icon;
             return (
               <li key={item.href}>
@@ -81,7 +92,7 @@ export default function Sidebar() {
           <p className="px-3 text-xs uppercase text-white/40 mb-2">Outils</p>
           <ul className="space-y-1">
             {toolItems.map((item) => {
-              const isActive = pathname === item.href;
+              const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
               const Icon = item.icon;
               return (
                 <li key={item.href}>

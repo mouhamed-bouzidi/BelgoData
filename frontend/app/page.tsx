@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 
 export default function Home() {
@@ -6,8 +8,8 @@ export default function Home() {
       <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
         <Image
           className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
+          src="/icon.png"
+          alt="logo BelgoData"
           width={100}
           height={20}
           priority
@@ -47,6 +49,7 @@ export default function Home() {
               alt="Vercel logomark"
               width={16}
               height={16}
+              style={{ height: "auto" }} // 🎯 Fixe l'avertissement de ratio en préservant la hauteur automatique
             />
             Deploy Now
           </a>

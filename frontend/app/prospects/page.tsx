@@ -58,29 +58,40 @@ const stats = {
 };
 
   useEffect(() => {
-    const fetchProspects = async () => {
-      try {
-        let url = `http://localhost:5000/api/prospects?page=${page}&limit=${limit}`;
-        
-        // Filtrage dynamique par code postal si sélectionné
-        if (activeFilters.city !== "Toutes") {
-          url += `&postal_code=${activeFilters.city}`;
-        }
-        // Filtrage dynamique par secteur si sélectionné
-        if (activeFilters.sector !== "Tous les secteurs") {
-          url += `&category=${encodeURIComponent(activeFilters.sector)}`;
-        }
-        
-        const res = await axios.get(url);
-        setProspects(res.data.results || []);
-        setTotal(res.data.total || 0);
-      } catch (error) {
-        console.error("Erreur lors de la récupération des prospects", error);
-      }
-    };
-    fetchProspects();
-  }, [page, limit, activeFilters]);
+  const fetchProspects = async () => {
+    try {
+      let url = `http://localhost:5000/api/prospects?page=${page}&limit=${limit}`;
 
+      if (activeFilters.search) url += `&search=${encodeURIComponent(activeFilters.search)}`;
+      if (activeFilters.city !== "Toutes") url += `&postal_code=${activeFilters.city}`;
+      if (activeFilters.sector !== "Tous les secteurs") url += `&category=${encodeURIComponent(activeFilters.sector)}`;
+      if (activeFilters.source !== "Toutes") url += `&source=${activeFilters.source}`;
+      if (activeFilters.email !== "Toutes") url += `&email=${encodeURIComponent(activeFilters.email)}`;
+      if (activeFilters.score) url += `&score_min=${activeFilters.score}`;
+
+      const res = await axios.get(url);
+      setProspects(res.data.results || []);
+      setTotal(res.data.total || 0);
+    } catch (error) {
+      console.error("Erreur lors de la récupération des prospects", error);
+    }
+  };
+  fetchProspects();
+}, [page, limit, activeFilters]);
+
+
+async function handleDelete(id: string, name: string) {
+  if (!confirm(`Supprimer "${name}" de la base de prospects ?`)) return;
+
+  try {
+    await axios.delete(`http://localhost:5000/api/prospects/${id}`);
+    setProspects((prev) => prev.filter((p) => p._id !== id));
+    setTotal((prev) => prev - 1);
+  } catch (error) {
+    console.error("Erreur lors de la suppression:", error);
+    alert("Erreur lors de la suppression du prospect.");
+  }
+}
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
@@ -104,6 +115,28 @@ const stats = {
     setActiveFilters({ search: "", source: "Toutes", sector: "Tous les secteurs", city: "Toutes", email: "Toutes", score: "" });
     setPage(1);
   };
+
+const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+function toggleSelect(id: string) {
+  setSelectedIds((prev) =>
+    prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+  );
+}
+// Fonction pour supprimer en masse les prospects sélectionnés
+async function handleBulkDelete() {
+  if (selectedIds.length === 0) return;
+  if (!confirm(`Supprimer ${selectedIds.length} prospect(s) sélectionné(s) ?`)) return;
+
+  try {
+    await Promise.all(selectedIds.map((id) => axios.delete(`http://localhost:5000/api/prospects/${id}`)));
+    setProspects((prev) => prev.filter((p) => !selectedIds.includes(p._id!)));
+    setTotal((prev) => prev - selectedIds.length);
+    setSelectedIds([]);
+  } catch (error) {
+    console.error("Erreur suppression en masse:", error);
+  }
+}
 
   // Helper pour formater proprement la date de création
   const formatDate = (dateStr?: string) => {
@@ -182,7 +215,122 @@ const stats = {
   </div>
 </div>
 
+{/* BARRE DE FILTRES */}
+<form onSubmit={handleSearch} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm mb-6">
+  <div className="relative mb-4">
+    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔍</span>
+    <input
+      type="text"
+      placeholder="Rechercher un prospect, une ville, un secteur..."
+      value={searchGlobal}
+      onChange={(e) => setSearchGlobal(e.target.value)}
+      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500 bg-slate-50/50"
+    />
+  </div>
+
+  <div className="flex items-end gap-6 items-end">
+    <div>
+      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Source</label>
+      <select
+        value={source}
+        onChange={(e) => setSource(e.target.value)}
+        className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+      >
+        <option>Toutes</option>
+        <option value="osm">OSM</option>
+        <option value="linkedin">LinkedIn</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Secteur</label>
+      <select
+        value={sector}
+        onChange={(e) => setSector(e.target.value)}
+        className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+      >
+        <option>Tous les secteurs</option>
+        <option>Restauration & Café</option>
+        <option>Alimentation & Boulangerie</option>
+        <option>Administration & Secteur Public</option>
+        <option>Services aux Entreprises</option>
+        <option>Finance & Juridique</option>
+        <option>Immobilier</option>
+        <option>Tech & Télécom</option>
+        <option>Asbl & ONG</option>
+        <option>Éducation & Recherche</option>
+        <option>Santé</option>
+        <option>Autre</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Province / Ville</label>
+      <select
+        value={city}
+        onChange={(e) => setCity(e.target.value)}
+        className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+      >
+        <option>Toutes</option>
+        <option value="1000">Bruxelles (1000)</option>
+        <option value="2000">Anvers (2000)</option>
+        <option value="3000">Louvain (3000)</option>
+        <option value="4000">Liège (4000)</option>
+        <option value="5000">Namur (5000)</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Email</label>
+      <select
+        value={emailFilter}
+        onChange={(e) => setEmailFilter(e.target.value)}
+        className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+      >
+        <option>Toutes</option>
+        <option>Disponible</option>
+        <option>Non disponible</option>
+      </select>
+    </div>
+
+    <div>
+      <label className="text-xs font-semibold text-slate-500 block mb-1.5">Score min.</label>
+      <input
+        type="number"
+        placeholder="Min."
+        value={minScore}
+        onChange={(e) => setMinScore(e.target.value)}
+        className="w-full p-2 text-xs rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+      />
+    </div>
+
+    <div className="flex gap-2">
+      <button
+        type="submit"
+        className="flex-1 py-2 bg-white hover:bg-indigo-50 border border-indigo-2000 text-indigo-500 font-semibold rounded-xl text-xs transition shadow-sm"
+      >
+       Filtrer
+      </button>
+      <button
+        type="button"
+        onClick={handleReset}
+        className="py-2 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-xl text-xs transition"
+      >
+        🔄
+      </button>
+    </div>
+  </div>
+</form>
+
       {/* DATA TABLE */}
+      {selectedIds.length > 0 && (
+  <button
+    onClick={handleBulkDelete}
+    className="text-xs font-semibold bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-100 transition"
+  >
+    🗑️ Supprimer ({selectedIds.length})
+  </button>
+)}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-4 flex justify-between items-center bg-white border-b border-slate-100">
           <p className="text-xs font-bold text-slate-700">{total} prospects trouvés</p>
@@ -198,7 +346,20 @@ const stats = {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                <th className="p-4 w-4"><input type="checkbox" className="rounded border-slate-300" /></th>
+                <th className="p-4 w-4">
+                  <input
+                    type="checkbox"
+                    checked={prospects.length > 0 && selectedIds.length === prospects.length}
+                    onChange={() =>
+                      setSelectedIds((prev) =>
+                        prev.length === prospects.length
+                          ? []
+                          : prospects.map((prospect) => prospect._id!).filter(Boolean)
+                      )
+                    }
+                    className="rounded border-slate-300"
+                  />
+                </th>
                 <th className="p-4">Entreprise</th>
                 <th className="p-4">Secteur</th>
                 <th className="p-4">Localisation</th>
@@ -224,7 +385,14 @@ const stats = {
 
                 return (
                   <tr key={p._id} className="hover:bg-slate-50/80 transition text-xs text-[#334155]">
-                    <td className="p-4"><input type="checkbox" className="rounded border-slate-300" /></td>
+                    <td className="p-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(p._id!)}
+                        onChange={() => p._id && toggleSelect(p._id)}
+                        className="rounded border-slate-300"
+                      />
+                    </td>
                     
                     {/* Entreprise avec icône ronde */}
                     <td className="p-4 font-bold text-slate-800 flex items-center gap-3">
@@ -291,8 +459,14 @@ const stats = {
 
                     {/* Bouton d'actions */}
                     <td className="p-4 text-center">
-                      <button className="text-slate-400 hover:text-slate-700 font-bold px-2 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200/60 rounded-lg transition text-xs">•••</button>
-                    </td>
+  <button
+    onClick={() => handleDelete(p._id!, p.name!)}
+    className="text-slate-400 hover:text-red-600 font-bold px-2 py-1 bg-slate-50 hover:bg-red-50 border border-slate-200/60 rounded-lg transition text-xs"
+    title="Supprimer ce prospect"
+  >
+    🗑️
+  </button>
+</td>
                   </tr>
                 );
               })}
