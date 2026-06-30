@@ -64,57 +64,63 @@ export default function Home() {
   const [userName] = useState("Mohamed Ali");
   const [greeting, setGreeting] = useState("Bonjour");
   
-  const [showSplash, setShowSplash] = useState(true);
+  // 🎯 États ajustés pour contrer le comportement SSR de Next.js
+  const [showSplash, setShowSplash] = useState(false); 
   const [fadeSplash, setFadeSplash] = useState(false);
 
+  // 1. Premier useEffect : S'exécute uniquement sur le client après le rendu initial
   useEffect(() => {
+    setMounted(true);
+    
     const hour = new Date().getHours();
     setGreeting(hour >= 18 ? "Bonsoir" : "Bonjour");
 
-    const fadeTimeout = setTimeout(() => {
-      setFadeSplash(true);
-    }, 2500);
-
-    const removeTimeout = setTimeout(() => {
-      setShowSplash(false);
-    }, 3000);
-
-    const loadChatHistory = () => {
-      if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("agent_chat_history");
-        if (saved) {
-          try {
-            const parsed = JSON.parse(saved);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              setMessages(parsed);
-              setMounted(true);
-              return;
-            }
-          } catch (e) {
-            console.error("Erreur historique:", e);
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("agent_chat_history");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+            setShowSplash(false); // Historique trouvé -> Pas de splash screen
+            return;
           }
+        } catch (e) {
+          console.error("Erreur historique:", e);
         }
       }
       
-      // Initialisation à vide si aucun historique n'existe
-      setMessages([]);
-      setMounted(true);
-    };
-
-    loadChatHistory();
-
-    return () => {
-      clearTimeout(fadeTimeout);
-      clearTimeout(removeTimeout);
-    };
+      // Si aucun historique n'est trouvé, c'est le premier lancement !
+      setShowSplash(true);
+    }
   }, []);
 
+  // 2. Deuxième useEffect : Gère les animations de disparition du splash screen s'il s'affiche
+  useEffect(() => {
+    if (showSplash) {
+      const fadeTimeout = setTimeout(() => {
+        setFadeSplash(true);
+      }, 2500);
+
+      const removeTimeout = setTimeout(() => {
+        setShowSplash(false);
+      }, 3000);
+
+      return () => {
+        clearTimeout(fadeTimeout);
+        clearTimeout(removeTimeout);
+      };
+    }
+  }, [showSplash]);
+
+  // Sauvegarde automatique de l'historique lors des nouveaux messages
   useEffect(() => {
     if (mounted && typeof window !== "undefined" && messages.length > 0) {
       localStorage.setItem("agent_chat_history", JSON.stringify(messages));
     }
   }, [messages, mounted]);
 
+  // Auto-scroll
   useEffect(() => {
     if (mounted) {
       scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -175,6 +181,14 @@ export default function Home() {
     }
     setMessages([]);
     setActiveReport(null);
+    // Optionnel : Réaffiche le splash screen si tu réinitialises manuellement
+    setShowSplash(true);
+    setFadeSplash(false);
+  }
+
+  // Sécurité pour éviter les bugs visuels d'hydratation Next.js
+  if (!mounted) {
+    return <div className="h-screen bg-slate-50" />;
   }
 
   const lastMessage = messages[messages.length - 1];
@@ -193,7 +207,7 @@ export default function Home() {
           <div className="max-w-3xl space-y-6">
             <div className="flex justify-center mb-4">
               <Image
-                src="/icon.png"
+                src="/logo1.png"
                 alt="logo BelgoData"
                 width={120}
                 height={24}
@@ -216,7 +230,7 @@ export default function Home() {
       <header className="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
           <Image
-            src="/icon.png"
+            src="/logo1.png"
             alt="logo BelgoData"
             width={90}
             height={18}
@@ -370,7 +384,9 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {/* Zone de contenu défilante améliorée */}
+            <div className="flex-1 overflow-y-auto scroll-smooth overscroll-contain p-6 space-y-6 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
+              
               <div className="flex items-start justify-between bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40">
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider">

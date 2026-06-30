@@ -17,8 +17,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-
-
 interface NavItem {
   label: string;
   href: string;
@@ -26,7 +24,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: "Agent IA", href: "/agent", icon: MessageSquare },
+  { label: "Agent IA", href: "/", icon: MessageSquare },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Prospects", href: "/prospects", icon: Building2 },
   { label: "Rapports & Bilans", href: "/rapports", icon: FileText },
@@ -63,12 +61,14 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation principale */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+      {/* Navigation principale avec Scrollbar épurée et moderne */}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
         <ul className="space-y-1">
           {navItems.map((item) => {
-            // Un onglet est actif s'il y a égalité stricte OU si l'URL commence par cet href (ex: /rapports/[id])
-            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+            const isActive = item.href === "/" 
+              ? pathname === "/" 
+              : pathname === item.href || pathname.startsWith(item.href + "/");
+
             const Icon = item.icon;
             return (
               <li key={item.href}>
@@ -92,7 +92,7 @@ export default function Sidebar() {
           <p className="px-3 text-xs uppercase text-white/40 mb-2">Outils</p>
           <ul className="space-y-1">
             {toolItems.map((item) => {
-              const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+              const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
               const Icon = item.icon;
               return (
                 <li key={item.href}>
