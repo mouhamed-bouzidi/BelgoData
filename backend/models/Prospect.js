@@ -16,9 +16,10 @@ const ProspectSchema = new mongoose.Schema(
     },
 
     // Format GeoJSON — obligatoire pour faire des recherches géo MongoDB (ex: "prospects à 5km de X")
+    // Pas de "default" ici : si aucune coordonnée n'est fournie, le champ location reste totalement absent
     location: {
-      type: { type: String, enum: ["Point"], default: "Point" },
-      coordinates: { type: [Number], default: undefined }, // [lon, lat]
+      type: { type: String, enum: ["Point"] },
+      coordinates: { type: [Number], default: undefined },
     },
 
     phone: { type: String, default: null },
@@ -28,14 +29,14 @@ const ProspectSchema = new mongoose.Schema(
     rating: { type: Number, default: null },
     score: { type: Number, default: null }, // calculé plus tard par le RAG
 
-    source: { type: String, enum: ["osm", "linkedin"], required: true },
+    source: { type: String, enum: ["osm", "linkedin", "manuel"], required: true },
 
     // Spécifique OSM, optionnel pour les autres sources
     osm_id: { type: Number, default: null },
     osm_type: { type: String, default: null },
   },
   {
-    timestamps: true, // ajoute createdAt/updatedAt automatiquement, gérés par Mongoose
+    timestamps: true,
   }
 );
 

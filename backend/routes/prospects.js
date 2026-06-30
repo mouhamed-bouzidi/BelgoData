@@ -119,4 +119,41 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// POST /api/prospects - ajout manuel
+router.post("/", async (req, res) => {
+  try {
+    const { name, category, address, phone, email, website } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Le nom de l'entreprise est requis." });
+    }
+
+    const prospectData = {
+      name,
+      category: category || "Autre",
+      address: {
+        street: address?.street || null,
+        housenumber: address?.housenumber || null,
+        city: address?.city || null,
+        postcode: address?.postcode || null,
+        province: address?.province || null,
+        country: "Belgium",
+      },
+      phone: phone || null,
+      email: email || null,
+      website: website || null,
+      source: "manuel",
+      score: null,
+    };
+
+    const newProspect = new Prospect(prospectData);
+    const saved = await newProspect.save();
+    res.status(201).json(saved);
+  } catch (error) {
+    console.error("❌ Erreur ajout prospect:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 module.exports = router;
