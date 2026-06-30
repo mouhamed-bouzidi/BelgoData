@@ -73,6 +73,118 @@ router.get("/stats", async (req, res) => {
   }
 });
 
+const { Parser } = require("json2csv");
+const ExcelJS = require("exceljs");
+
+// GET /api/prospects/export/csv - export CSV avec filtres
+router.get("/export/csv", async (req, res) => {
+  try {
+    const { postal_code, category, source, search } = req.query;
+    const filter = {};
+    if (postal_code) filter["address.postcode"] = postal_code;
+    if (category) filter.category = category;
+    if (source) filter.source = source.toLowerCase();
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const prospects = await Prospect.find(filter).lean();
+
+    const rows = prospects.map((p) => ({
+      Nom: p.name,
+      Secteur: p.category,
+      Rue: p.address?.street || "",
+      CodePostal: p.address?.postcode || "",
+      Ville: p.address?.city || "",
+      Telephone: p.phone || "",
+      Email: p.email || "",
+      SiteWeb: p.website || "",
+      Source: p.source,
+      Score: p.score ?? "",
+      AjouteLe: p.createdAt,
+    }));
+
+    const parser = new Parser();
+    const csv = parser.parse(rows);
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="prospects_export.csv"`);
+    res.send("\uFEFF" + csv); // BOM pour compatibilité Excel avec accents
+  } catch (error) {
+    console.error("Erreur export CSV:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/prospects/export/excel - export Excel avec filtres
+router.get("/export/excel", async (req, res) => {
+  try {
+    const { postal_code, category, source, search } = req.query;
+    const filter = {};
+    if (postal_code) filter["address.postcode"] = postal_code;
+    if (category) filter.category = category;
+    if (source) filter.source = source.toLowerCase();
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const prospects = await Prospect.find(filter).lean();
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Prospects");
+
+    sheet.columns = [
+      { header: "Nom", key: "name", width: 30 },
+      { header: "Secteur", key: "category", width: 25 },
+      { header: "Rue", key: "street", width: 25 },
+      { header: "Code postal", key: "postcode", width: 12 },
+      { header: "Ville", key: "city", width: 18 },
+      { header: "Téléphone", key: "phone", width: 18 },
+      { header: "Email", key: "email", width: 28 },
+      { header: "Site web", key: "website", width: 30 },
+      { header: "Source", key: "source", width: 10 },
+      { header: "Score", key: "score", width: 10 },
+      { header: "Ajouté le", key: "createdAt", width: 20 },
+    ];
+
+    prospects.forEach((p) => {
+      sheet.addRow({
+        name: p.name,
+        category: p.category,
+        street: p.address?.street || "",
+        postcode: p.address?.postcode || "",
+        city: p.address?.city || "",
+        phone: p.phone || "",
+        email: p.email || "",
+        website: p.website || "",
+        source: p.source,
+        score: p.score ?? "",
+        createdAt: new Date(p.createdAt).toLocaleDateString("fr-BE"),
+      });
+    });
+
+    sheet.getRow(1).font = { bold: true };
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="prospects_export.xlsx"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Erreur export Excel:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/prospects/:id
 router.get("/:id", async (req, res) => {
   try {

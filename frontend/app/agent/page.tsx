@@ -1,8 +1,25 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { redirect } from "next/navigation";
 import axios from "axios";
-import { Bot, Sparkles, Send } from "lucide-react";
+import { 
+  Bot, 
+  Sparkles, 
+  Send, 
+  RefreshCw, 
+  User, 
+  Building2, 
+  ExternalLink, 
+  MapPin, 
+  Phone, 
+  Mail, 
+  CheckCircle2, 
+  XCircle, 
+  FileText, 
+  ChevronRight, 
+  Info 
+} from "lucide-react";
 
 interface Message {
   role: "user" | "agent";
@@ -11,6 +28,7 @@ interface Message {
   timestamp: string;
   report?: Report; 
 }
+
 interface Report {
   _id: string;
   prospect_id: string;
@@ -28,18 +46,14 @@ interface Report {
   faiblesses: string[];
   argumentaire: string;
 }
+
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL;
+
 const defaultMessageContent = 
-  "👋 Bonjour ! Je suis votre assistant de prospection intelligent. Je peux :\n\n" +
-  "✓ Chercher des entreprises dans toute la Belgique\n" +
-  "✓ Mémoriser notre conversation\n" +
-  "✓ Supporter tous les codes postaux belges\n" +
-  "✓ Vous suggérer des actions\n\n" +
-  "Exemples de ce que vous pouvez demander :\n" +
-  "• \"Trouve-moi des restaurants à 1000 Bruxelles\"\n" +
-  "• \"Montre-moi les cafés à 2000 Anvers\"\n" +
-  "• \"Cherche des pharmacies à Liège\"\n" +
-  "• \"Liste tous les prospects en base\"";
+  "Je suis votre assistant de prospection intelligent spécialisé sur le marché belge. Voici ce que nous pouvons faire ensemble :\n\n" +
+  "✦ **Recherche ciblée** : Trouvez des entreprises par secteur et code postal.\n" +
+  "✦ **Analyse de données** : Générez des bilans de prospection automatisés.\n" +
+  "✦ **Suivi intelligent** : Je garde en mémoire notre fil de discussion pour affiner les résultats.";
 
 const defaultActions = [
   "Restaurants à 1000 Bruxelles",
@@ -52,7 +66,6 @@ export default function AgentPage() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
 
-  // Initialisation à vide pour éviter l'écart de contenu SSR vs Client
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -60,8 +73,13 @@ export default function AgentPage() {
   const [activeReport, setActiveReport] = useState<Report | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Évite les conflits d'hydratation (Hydration Mismatch) au montage initial
+  const [userName] = useState("Mohamed Ali");
+  const [greeting, setGreeting] = useState("Bonjour");
+
   useEffect(() => {
+    const hour = new Date().getHours();
+    setGreeting(hour >= 18 ? "Bonsoir" : "Bonjour");
+
     const loadChatHistory = () => {
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem("agent_chat_history");
@@ -74,11 +92,11 @@ export default function AgentPage() {
               return;
             }
           } catch (e) {
-            console.error("Erreur lors du chargement de l'historique:", e);
+            console.error("Erreur historique:", e);
           }
         }
       }
-      // Si aucun historique n'existe, on injecte le message par défaut AVEC le temps local du client
+      
       setMessages([
         {
           role: "agent",
@@ -93,14 +111,12 @@ export default function AgentPage() {
     loadChatHistory();
   }, []);
 
-  // Sauvegarder l'historique dans localStorage
   useEffect(() => {
     if (mounted && typeof window !== "undefined" && messages.length > 0) {
       localStorage.setItem("agent_chat_history", JSON.stringify(messages));
     }
   }, [messages, mounted]);
 
-  // Auto-scroll vers le dernier message
   useEffect(() => {
     if (mounted) {
       scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -108,47 +124,47 @@ export default function AgentPage() {
   }, [messages, mounted]);
 
   async function sendMessage(text: string) {
-  if (!text.trim()) return;
+    if (!text.trim()) return;
 
-  const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
-  const updatedMessages = [...messages, userMessage];
-  setMessages(updatedMessages);
-  setInput("");
-  setLoading(true);
+    const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setInput("");
+    setLoading(true);
 
-  try {
-    const res = await axios.post(`${AI_URL}/agent/chat`, {
-      message: text,
-      history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
-    });
+    try {
+      const res = await axios.post(`${AI_URL}/agent/chat`, {
+        message: text,
+        history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+      });
 
-    const agentMessage: Message = {
-      role: "agent",
-      content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
-      timestamp: nowTime(),
-      suggestedActions: res.data?.suggested_actions,
-      report: res.data?.report,
-    };
-
-    setMessages((prev) => [...prev, agentMessage]);
-
-    if (res.data?.report) {
-      setActiveReport(res.data.report);
-    }
-  } catch (error) {
-    console.error("Erreur agent:", error);
-    setMessages((prev) => [
-      ...prev,
-      {
+      const agentMessage: Message = {
         role: "agent",
-        content: "Désolé, une erreur est survenue. Vérifiez que le service IA est bien démarré.",
+        content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
         timestamp: nowTime(),
-      },
-    ]);
-  } finally {
-    setLoading(false);
+        suggestedActions: res.data?.suggested_actions,
+        report: res.data?.report,
+      };
+
+      setMessages((prev) => [...prev, agentMessage]);
+
+      if (res.data?.report) {
+        setActiveReport(res.data.report);
+      }
+    } catch (error) {
+      console.error("Erreur agent:", error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
+          timestamp: nowTime(),
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
-}
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -167,248 +183,303 @@ export default function AgentPage() {
         timestamp: nowTime(),
       },
     ]);
+    setActiveReport(null);
   }
 
+  // Extrait les dernières actions suggérées du flux pour les afficher proprement en bas
+  const lastMessage = messages[messages.length - 1];
+  const currentSuggestions = lastMessage?.role === "agent" ? lastMessage.suggestedActions : [];
+
   return (
-  <div className="p-8 h-screen flex flex-col">
-    {/* Header */}
-    <div className="mb-4">
-      <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-        Agent IA <Sparkles size={20} className="text-accent" />
-      </h1>
-      <p className="text-sm text-gray-500">Votre assistant de prospection intelligent</p>
-    </div>
-
-    {/* Composition à 2 colonnes : chat à gauche, bilan à droite */}
-    <div className="flex-1 flex gap-4 overflow-hidden">
-      {/* COLONNE GAUCHE — Chat */}
-      <div className={`bg-card-bg border border-border-color rounded-xl flex flex-col overflow-hidden transition-all ${activeReport ? "w-1/2" : "w-full"}`}>
-        {/* Chat header */}
-        <div className="px-5 py-4 border-b border-border-color flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-white">
-              <Bot size={18} />
-            </div>
-            <div>
-              <div className="font-semibold text-gray-900 text-sm">Agent IA</div>
-              <div className="text-xs text-green flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green inline-block" />
-                En ligne
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={resetConversation}
-            className="text-sm border border-border-color px-3 py-1.5 rounded-lg text-gray-600 hover:bg-content-bg transition-colors"
-          >
-            🔄 Nouvelle conversation
-          </button>
+    <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
+      
+      {/* HEADER PRINCIPAL */}
+      <header className="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between shrink-0">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+            <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
+              {greeting}, {userName}
+            </span>
+            <Sparkles size={20} className="text-indigo-500 animate-pulse" />
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
+          </p>
         </div>
+        
+        <button
+          onClick={resetConversation}
+          className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+        >
+          <RefreshCw size={14} />
+          Nouvelle session
+        </button>
+      </header>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"} flex flex-col gap-1`}>
-                <div
-                  className={`px-4 py-3 rounded-2xl text-sm whitespace-pre-line ${
-                    msg.role === "user"
-                      ? "bg-accent text-white"
-                      : "bg-content-bg text-gray-800 leading-relaxed"
-                  }`}
-                >
-                  {msg.content}
-                </div>
-
-                {/* Bouton pour rouvrir le bilan depuis l'historique */}
-                {msg.report && (
-                  <button
-                    onClick={() => setActiveReport(msg.report!)}
-                    className="mt-1 flex items-center gap-2 px-3 py-2 bg-accent/5 border border-accent/30 rounded-lg text-xs text-accent hover:bg-accent/10 transition-colors"
-                  >
-                    📊 Voir le bilan de {msg.report.name}
-                  </button>
-                )}
-
-                {msg.suggestedActions && msg.suggestedActions.length > 0 && (
-                  <div className="flex flex-col gap-1.5 mt-2 w-full">
-                    {msg.suggestedActions.map((action) => (
-                      <button
-                        key={action}
-                        onClick={() => sendMessage(action)}
-                        className="text-left text-xs px-3 py-2 border border-accent/40 bg-accent/5 text-accent rounded-lg hover:bg-accent/15 hover:border-accent/60 transition-colors font-medium"
-                      >
-                        💡 {action}
-                      </button>
-                    ))}
+      {/* ZONE DE TRAVAIL (2 Colonnes) */}
+      <div className="flex-1 flex overflow-hidden p-4 gap-4">
+        
+        {/* COLONNE CHAT */}
+        <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${activeReport ? "w-7/12" : "w-full"}`}>
+          
+          {/* Fil de discussion */}
+          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-slate-50/50 to-white">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                
+                {/* Avatar Agent */}
+                {msg.role === "agent" && (
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+                    <Bot size={16} />
                   </div>
                 )}
 
-                {msg.timestamp && (
-                  <span className="text-xs text-gray-400 px-1">{msg.timestamp}</span>
+                <div className={`max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                  {/* Bulle de texte */}
+                  <div
+                    className={`px-4 py-3 rounded-2xl text-[14px] leading-relaxed shadow-sm ${
+                      msg.role === "user"
+                        ? "bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-none font-medium"
+                        : "bg-white border border-slate-100 text-slate-800 rounded-tl-none whitespace-pre-line"
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+
+                  {/* Bouton de rappel de rapport contextuel */}
+                  {msg.report && (
+                    <button
+                      onClick={() => setActiveReport(msg.report!)}
+                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-600 font-medium hover:bg-indigo-100/70 transition-colors"
+                    >
+                      <Building2 size={13} />
+                      Ouvrir le bilan de {msg.report.name}
+                    </button>
+                  )}
+
+                  <span className="text-[10px] text-slate-400 mt-1.5 px-1">{msg.timestamp}</span>
+                </div>
+
+                {/* Avatar User */}
+                {msg.role === "user" && (
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm shrink-0 mt-0.5">
+                    <User size={16} />
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
+            ))}
 
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-content-bg px-4 py-3 rounded-2xl text-sm text-gray-500">
-                Réflexion en cours...
+            {/* Indicateur de chargement */}
+            {loading && (
+              <div className="flex gap-4 justify-start animate-pulse">
+                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                  <Bot size={16} />
+                </div>
+                <div className="bg-slate-100 px-4 py-2.5 rounded-2xl rounded-tl-none text-xs text-slate-500 font-medium flex items-center gap-2">
+                  <span className="flex h-1.5 w-1.5 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                  </span>
+                  Analyse des données belges...
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <div ref={scrollRef} />
-        </div>
-
-        {/* Input */}
-        <form onSubmit={handleSubmit} className="px-5 py-4 border-t border-border-color flex gap-3">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Écrivez votre message..."
-            className="flex-1 px-4 py-3 rounded-lg border border-border-color text-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
-            disabled={loading}
-          />
-          <button
-            type="submit"
-            disabled={loading || !input.trim()}
-            className="bg-accent text-white px-5 py-3 rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-40 transition-colors"
-          >
-            <Send size={18} />
-          </button>
-        </form>
-      </div>
-
-      {/* COLONNE DROITE — Bilan de prospection (panneau latéral) */}
-      {activeReport && (
-        <div className="w-1/2 bg-card-bg border border-border-color rounded-xl flex flex-col overflow-hidden">
-          {/* Header du panneau */}
-          <div className="px-5 py-4 border-b border-border-color flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Bilan de prospection</h2>
-            <button
-              onClick={() => setActiveReport(null)}
-              className="text-gray-400 hover:text-gray-700 transition-colors"
-            >
-              ✕
-            </button>
+            <div ref={scrollRef} />
           </div>
 
-          <div className="flex-1 overflow-y-auto p-5">
-            {/* Entreprise */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-orange-50 flex items-center justify-center text-2xl">
-                  🏢
-                </div>
-                <div>
-                  <h3 className="font-bold text-gray-900">{activeReport.name}</h3>
-                  <p className="text-sm text-gray-500">{activeReport.category}</p>
-                  <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                    📍 {activeReport.address?.street} {activeReport.address?.city}
+          {/* ZONE ACTIONS & FORMULAIRE BAS DE PAGE */}
+          <div className="border-t border-slate-100 bg-white p-4 space-y-4 shrink-0">
+            
+            {/* Puces d'actions suggérées dynamiques */}
+            {currentSuggestions && currentSuggestions.length > 0 && !loading && (
+              <div className="flex flex-wrap gap-2 px-1">
+                {currentSuggestions.map((action) => (
+                  <button
+                    key={action}
+                    onClick={() => sendMessage(action)}
+                    className="text-xs bg-slate-50 border border-slate-200 text-slate-600 px-3 py-1.5 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all font-medium flex items-center gap-1.5 shadow-sm"
+                  >
+                    <Sparkles size={12} className="text-indigo-500" />
+                    {action}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input Form */}
+            <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
+                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                disabled={loading}
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
+              >
+                <Send size={16} />
+              </button>
+            </form>
+          </div>
+        </div>
+
+        {/* PANNEAU LATÉRAL MODERNE (BILAN) */}
+        {activeReport && (
+          <div className="w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
+            
+            {/* Header du panneau */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2">
+                <FileText size={16} className="text-indigo-600" />
+                <h2 className="font-bold text-slate-800 text-sm">Fiche Prospect Qualifiée</h2>
+              </div>
+              <button
+                onClick={() => setActiveReport(null)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors text-xs font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Contenu défilant */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              
+              {/* Carte Identité Majeure */}
+              <div className="flex items-start justify-between bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                    {activeReport.category || "Secteur non défini"}
+                  </span>
+                  <h3 className="font-bold text-slate-900 text-lg leading-tight pt-1">{activeReport.name}</h3>
+                  <p className="text-xs text-slate-500 flex items-center gap-1">
+                    <MapPin size={12} className="text-slate-400" />
+                    {activeReport.address?.street}, {activeReport.address?.postcode} {activeReport.address?.city}
                   </p>
                 </div>
-              </div>
-              <div className="text-right">
-                <span className="text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700">
-                  {activeReport.score >= 70 ? "Score élevé" : activeReport.score >= 50 ? "Score moyen" : "Score faible"}
-                </span>
-                <div className="text-2xl font-bold text-gray-900 mt-1">
-                  {activeReport.score}
-                  <span className="text-sm text-gray-400">/100</span>
+                
+                {/* Score badge haut niveau */}
+                <div className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]">
+                  <div className="text-xs text-slate-400 font-medium">Score</div>
+                  <div className={`text-xl font-black ${
+                    activeReport.score >= 70 ? "text-emerald-600" : activeReport.score >= 50 ? "text-amber-500" : "text-rose-500"
+                  }`}>
+                    {activeReport.score}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Contacts */}
-            <div className="flex flex-wrap gap-2 mb-4">
-              {activeReport.phone && (
-                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-content-bg rounded-lg text-xs text-gray-700">
-                  📞 {activeReport.phone}
-                </span>
-              )}
-              {activeReport.email && (
-                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-content-bg rounded-lg text-xs text-gray-700">
-                  ✉️ {activeReport.email}
-                </span>
-              )}
-              {activeReport.website && (
-                <a
-                  href={activeReport.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-content-bg rounded-lg text-xs text-accent hover:underline"
-                >
-                  🔗 {activeReport.website.replace(/^https?:\/\//, "")}
-                </a>
-              )}
-            </div>
-
-            <div className="text-xs text-gray-400 mb-4">
-              Source : {activeReport.source?.toUpperCase()}
-            </div>
-
-            {/* Présence digitale */}
-            <div className="bg-content-bg rounded-lg p-3 mb-4">
-              <div className="text-xs text-gray-500">Présence digitale</div>
-              <div className="font-semibold text-gray-900">{activeReport.presence_digitale}</div>
-            </div>
-
-            {/* Analyse IA */}
-            <div className="mb-4">
-              <h4 className="font-semibold text-sm text-gray-900 mb-2">Analyse IA</h4>
-              <p className="text-sm text-gray-600 leading-relaxed">{activeReport.analyse}</p>
-            </div>
-
-            {/* Forces / Faiblesses */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <div>
-                <h4 className="font-semibold text-sm text-green mb-2">Forces</h4>
-                <ul className="space-y-1">
-                  {activeReport.forces?.map((f, i) => (
-                    <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
-                      <span className="text-green">✓</span> {f}
-                    </li>
-                  ))}
-                </ul>
+              {/* Grid Contacts rapides */}
+              <div className="grid grid-cols-1 gap-2">
+                {activeReport.phone && (
+                  <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+                    <Phone size={14} className="text-slate-400" />
+                    <span>{activeReport.phone}</span>
+                  </div>
+                )}
+                {activeReport.email && (
+                  <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
+                    <Mail size={14} className="text-slate-400" />
+                    <span className="truncate">{activeReport.email}</span>
+                  </div>
+                )}
+                {activeReport.website && (
+                  <a
+                    href={activeReport.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-between text-xs text-indigo-600 bg-indigo-50/30 p-2.5 rounded-lg border border-indigo-100/40 hover:bg-indigo-50/60 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 truncate">
+                      <ExternalLink size={14} className="text-indigo-400" />
+                      <span className="truncate font-medium">{activeReport.website.replace(/^https?:\/\//, "")}</span>
+                    </div>
+                    <ChevronRight size={14} className="text-indigo-400 shrink-0" />
+                  </a>
+                )}
               </div>
-              <div>
-                <h4 className="font-semibold text-sm text-red-500 mb-2">Faiblesses</h4>
-                <ul className="space-y-1">
-                  {activeReport.faiblesses?.map((f, i) => (
-                    <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
-                      <span className="text-red-500">✕</span> {f}
-                    </li>
-                  ))}
-                </ul>
+
+              {/* Diagnostic Digital */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Info size={12} /> Présence en ligne
+                </h4>
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/50 text-xs text-slate-700 leading-relaxed font-medium">
+                  {activeReport.presence_digitale}
+                </div>
+              </div>
+
+              {/* Analyse descriptive */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l'analyse</h4>
+                <p className="text-xs text-slate-600 leading-relaxed bg-white">{activeReport.analyse}</p>
+              </div>
+
+              {/* Matrice Forces & Faiblesses */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-emerald-50/40 border border-emerald-100/70 p-3.5 rounded-xl space-y-2">
+                  <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
+                    <CheckCircle2 size={13} className="text-emerald-600" />
+                    Points forts
+                  </h4>
+                  <ul className="space-y-1.5">
+                    {activeReport.forces?.map((f, i) => (
+                      <li key={i} className="text-[11px] text-slate-600 leading-tight flex items-start gap-1">
+                        <span className="text-emerald-500 font-bold select-none">•</span> {f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="bg-rose-50/40 border border-rose-100/70 p-3.5 rounded-xl space-y-2">
+                  <h4 className="font-bold text-xs text-rose-800 flex items-center gap-1.5">
+                    <XCircle size={13} className="text-rose-500" />
+                    Axes d'amélioration
+                  </h4>
+                  <ul className="space-y-1.5">
+                    {activeReport.faiblesses?.map((f, i) => (
+                      <li key={i} className="text-[11px] text-slate-600 leading-tight flex items-start gap-1">
+                        <span className="text-rose-400 font-bold select-none">•</span> {f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Pitch commercial personnalisé */}
+              <div className="bg-slate-900 text-slate-100 p-4 rounded-xl space-y-2 shadow-sm">
+                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d'approche conseillé</h4>
+                <p className="text-xs text-slate-300 leading-relaxed italic">"{activeReport.argumentaire}"</p>
               </div>
             </div>
 
-            {/* Argumentaire */}
-            <div className="mb-4">
-              <h4 className="font-semibold text-sm text-gray-900 mb-2">Argumentaire suggéré</h4>
-              <p className="text-sm text-gray-600 leading-relaxed">{activeReport.argumentaire}</p>
+            {/* Lien d'ouverture global */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
+              <a
+                href={`/rapports/${activeReport._id}`}
+                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98]"
+              >
+                Accéder au rapport d'analyse complet
+                <ChevronRight size={14} />
+              </a>
             </div>
           </div>
+        )}
+      </div>
 
-          {/* Footer — lien vers la page complète */}
-          <div className="px-5 py-4 border-t border-border-color">
-            <a
-              href={`/rapports/${activeReport._id}`}
-              className="block text-center bg-accent text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
-            >
-              Voir le rapport complet →
-            </a>
-          </div>
-        </div>
-      )}
+      {/* FOOTER DISCRET */}
+      <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
+        Données collectées via les registres publics et analysées par l'IA BelgoData. Validez les données critiques avant démarchage.
+      </footer>
     </div>
+  );
+}
 
-    <p className="text-xs text-gray-400 text-center mt-2">
-      L&apos;agent IA peut se tromper. Vérifiez les informations importantes.
-    </p>
-  </div>
-);
+export function RootPage() {
+  redirect("/agent");
+  return null;
 }
