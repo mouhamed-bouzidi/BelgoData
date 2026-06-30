@@ -38,8 +38,19 @@ interface Stats {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
-const COLORS = ["#6d5ef0", "#3b82f6", "#10b981", "#f59e0b", "#ec4899", "#94a3b8"];
-
+const COLORS = [
+  "#6d5ef0", // violet
+  "#3b82f6", // bleu
+  "#10b981", // vert
+  "#f59e0b", // orange
+  "#ec4899", // rose
+  "#06b6d4", // cyan
+  "#8b5cf6", // violet clair
+  "#ef4444", // rouge
+  "#14b8a6", // teal
+  "#f97316", // orange foncé
+  "#94a3b8", // gris (fallback)
+];
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);

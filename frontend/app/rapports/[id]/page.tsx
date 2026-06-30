@@ -13,7 +13,14 @@ import {
   MapPin,
   CheckCircle2,
   XCircle,
+  ExternalLink
 } from "lucide-react";
+
+interface WebSource {
+  title: string;
+  snippet: string;
+  url: string;
+}
 
 interface Report {
   _id: string;
@@ -31,12 +38,13 @@ interface Report {
   forces: string[];
   faiblesses: string[];
   argumentaire: string;
+  web_sources?: WebSource[];
   createdAt: string;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-type Tab = "resume" | "informations" | "analyse" | "argumentaire";
+type Tab = "resume" | "informations" | "analyse" | "argumentaire" | "sources";
 
 export default function ReportPage() {
   const params = useParams();
@@ -60,12 +68,12 @@ export default function ReportPage() {
   }, [params.id]);
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-400">Chargement du rapport...</div>;
+    return <div className="p-8 text-center text-gray-400 font-medium">Chargement du rapport...</div>;
   }
 
   if (!report) {
     return (
-      <div className="p-8 text-center text-red-500">
+      <div className="p-8 text-center text-red-500 font-medium">
         Rapport non trouvé.
         <button onClick={() => router.push("/agent")} className="block mt-4 text-accent underline mx-auto">
           Retour à l&apos;agent
@@ -78,7 +86,7 @@ export default function ReportPage() {
   const scoreColor = report.score >= 70 ? "text-green" : report.score >= 50 ? "text-orange" : "text-red-500";
 
   return (
-    <div className="p-8">
+    <div className="p-8 bg-content-bg min-h-screen text-gray-900">
       {/* Breadcrumb */}
       <div className="text-sm text-gray-400 mb-2 flex items-center gap-2">
         <span>Agent IA</span> <span>›</span> <span>Bilan de prospection</span> <span>›</span>
@@ -94,21 +102,34 @@ export default function ReportPage() {
         <div className="flex gap-3">
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-2 px-4 py-2.5 border border-border-color rounded-lg text-sm font-medium text-gray-700 hover:bg-content-bg transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 border border-border-color rounded-lg text-sm font-medium text-gray-700 hover:bg-white transition-colors"
           >
             <ArrowLeft size={16} /> Retour
           </button>
           <button className="flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">
             <RefreshCw size={16} /> Régénérer le bilan
           </button>
-          <button className="px-4 py-2.5 border border-border-color rounded-lg text-gray-700 hover:bg-content-bg transition-colors">
-            <Download size={16} />
-          </button>
+          <a
+            href={`${API_URL}/api/reports/${report._id}/export/pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2.5 border border-border-color rounded-lg text-sm font-medium text-gray-700 hover:bg-white transition-colors"
+          >
+            <Download size={16} /> PDF
+          </a>
+          <a
+            href={`${API_URL}/api/reports/${report._id}/export/excel`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 px-4 py-2.5 border border-border-color rounded-lg text-sm font-medium text-gray-700 hover:bg-white transition-colors"
+          >
+            <Download size={16} /> Excel
+          </a>
         </div>
       </div>
 
       {/* Carte entreprise + score */}
-      <div className="bg-card-bg border border-border-color rounded-xl p-6 mb-6 flex items-start justify-between gap-6">
+      <div className="bg-white border border-border-color rounded-xl p-6 mb-6 flex items-start justify-between gap-6 shadow-sm">
         <div className="flex items-start gap-4">
           <div className="w-16 h-16 rounded-full bg-orange-50 flex items-center justify-center text-3xl">
             🏢
@@ -172,14 +193,14 @@ export default function ReportPage() {
       </div>
 
       {/* Indicateurs rapides */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-card-bg border border-border-color rounded-xl p-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white border border-border-color rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-400">Présence digitale</p>
-          <p className="font-semibold text-gray-900">{report.presence_digitale}</p>
+          <p className="font-semibold text-gray-900 mt-1">{report.presence_digitale}</p>
         </div>
-        <div className="bg-card-bg border border-border-color rounded-xl p-4">
+        <div className="bg-white border border-border-color rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-400">Email trouvé</p>
-          <p className="font-semibold flex items-center gap-1.5">
+          <p className="font-semibold flex items-center gap-1.5 mt-1">
             {report.email ? (
               <>
                 <CheckCircle2 size={16} className="text-green" /> Oui
@@ -191,9 +212,9 @@ export default function ReportPage() {
             )}
           </p>
         </div>
-        <div className="bg-card-bg border border-border-color rounded-xl p-4">
+        <div className="bg-white border border-border-color rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-400">Téléphone trouvé</p>
-          <p className="font-semibold flex items-center gap-1.5">
+          <p className="font-semibold flex items-center gap-1.5 mt-1">
             {report.phone ? (
               <>
                 <CheckCircle2 size={16} className="text-green" /> Oui
@@ -205,9 +226,9 @@ export default function ReportPage() {
             )}
           </p>
         </div>
-        <div className="bg-card-bg border border-border-color rounded-xl p-4">
+        <div className="bg-white border border-border-color rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-400">Site web trouvé</p>
-          <p className="font-semibold flex items-center gap-1.5">
+          <p className="font-semibold flex items-center gap-1.5 mt-1">
             {report.website ? (
               <>
                 <CheckCircle2 size={16} className="text-green" /> Oui
@@ -222,20 +243,22 @@ export default function ReportPage() {
       </div>
 
       {/* Tabs */}
-      <div className="bg-card-bg border border-border-color rounded-xl overflow-hidden">
-        <div className="flex border-b border-border-color px-5">
+      <div className="bg-white border border-border-color rounded-xl overflow-hidden shadow-sm">
+        <div className="flex border-b border-border-color px-5 overflow-x-auto">
           {[
             { id: "resume", label: "Résumé" },
             { id: "informations", label: "Informations" },
             { id: "analyse", label: "Analyse IA" },
             { id: "argumentaire", label: "Argumentaire" },
+            { id: "sources", label: `Sources web (${report.web_sources?.length || 0})` },
           ].map((t) => (
             <button
               key={t.id}
+              type="button"
               onClick={() => setTab(t.id as Tab)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t.id
-                  ? "border-accent text-accent"
+                  ? "border-accent text-accent font-semibold"
                   : "border-transparent text-gray-500 hover:text-gray-800"
               }`}
             >
@@ -244,14 +267,15 @@ export default function ReportPage() {
           ))}
         </div>
 
+        {/* Content Tabs */}
         <div className="p-6">
           {tab === "resume" && (
-            <div>
-              <div className="bg-accent-light/30 border border-accent/20 rounded-lg p-4 mb-5">
+            <div className="space-y-5">
+              <div className="bg-accent-light/30 border border-accent/20 rounded-lg p-4">
                 <h4 className="font-semibold text-sm text-gray-900 mb-2">Résumé de l&apos;analyse IA</h4>
                 <p className="text-sm text-gray-700 leading-relaxed">{report.analyse}</p>
               </div>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <h4 className="font-semibold text-sm text-green mb-3">Forces</h4>
                   <ul className="space-y-2">
@@ -277,26 +301,26 @@ export default function ReportPage() {
           )}
 
           {tab === "informations" && (
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="flex justify-between border-b border-border-color py-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+              <div className="flex justify-between border-b border-border-color py-2.5">
                 <span className="text-gray-400">Secteur</span>
                 <span className="text-gray-900 font-medium">{report.category}</span>
               </div>
-              <div className="flex justify-between border-b border-border-color py-2">
+              <div className="flex justify-between border-b border-border-color py-2.5">
                 <span className="text-gray-400">Ville / Code postal</span>
                 <span className="text-gray-900 font-medium">
                   {report.address?.city} ({report.address?.postcode})
                 </span>
               </div>
-              <div className="flex justify-between border-b border-border-color py-2">
+              <div className="flex justify-between border-b border-border-color py-2.5">
                 <span className="text-gray-400">Province</span>
                 <span className="text-gray-900 font-medium">{report.address?.province}</span>
               </div>
-              <div className="flex justify-between border-b border-border-color py-2">
+              <div className="flex justify-between border-b border-border-color py-2.5">
                 <span className="text-gray-400">Source</span>
                 <span className="text-gray-900 font-medium">{report.source?.toUpperCase()}</span>
               </div>
-              <div className="flex justify-between border-b border-border-color py-2">
+              <div className="flex justify-between border-b border-border-color py-2.5">
                 <span className="text-gray-400">Collecté le</span>
                 <span className="text-gray-900 font-medium">
                   {new Date(report.createdAt).toLocaleDateString("fr-BE")}
@@ -316,6 +340,46 @@ export default function ReportPage() {
             <div>
               <h4 className="font-semibold text-sm text-gray-900 mb-2">Argumentaire commercial suggéré</h4>
               <p className="text-sm text-gray-700 leading-relaxed">{report.argumentaire}</p>
+            </div>
+          )}
+
+          {tab === "sources" && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="font-semibold text-sm text-gray-900">
+                  Sources web utilisées pour l&apos;analyse RAG
+                </h4>
+                <span className="text-xs text-gray-400">Recherche via Tavily API</span>
+              </div>
+
+              {!report.web_sources || report.web_sources.length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  Aucune source web n&apos;a été trouvée pour cette entreprise. L&apos;analyse repose uniquement sur les données internes (OSM).
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {report.web_sources.map((s, i) => (
+                    <a
+                      key={i}
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-4 bg-content-bg rounded-lg hover:bg-accent-light/30 transition-colors group border border-transparent hover:border-border-color"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h5 className="text-sm font-semibold text-gray-900 group-hover:text-accent transition-colors">
+                            {s.title}
+                          </h5>
+                          <p className="text-xs text-gray-500 mt-1 leading-relaxed">{s.snippet}</p>
+                          <p className="text-xs text-gray-400 mt-2 truncate max-w-xl">{s.url}</p>
+                        </div>
+                        <ExternalLink size={14} className="text-gray-400 flex-shrink-0 mt-1 group-hover:text-accent transition-colors" />
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
