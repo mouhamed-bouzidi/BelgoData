@@ -2,15 +2,53 @@ const express = require("express");
 const router = express.Router();
 const Prospect = require("../models/Prospect");
 
+const buildProspectFilter = (query) => {
+  const { postal_code, category, source, search, email, score_min } = query;
+  const filter = {};
+  const conditions = [];
+
+  if (postal_code) conditions.push({ "address.postcode": postal_code });
+  if (category) conditions.push({ category });
+  if (source) conditions.push({ source: source.toLowerCase() });
+  if (score_min) conditions.push({ score: { $gte: Number(score_min) } });
+
+  if (email === "Disponible") {
+    conditions.push({ email: { $regex: /\S/ } });
+  }
+
+  if (email === "Non disponible") {
+    conditions.push({
+      $or: [
+        { email: { $exists: false } },
+        { email: null },
+        { email: "" },
+        { email: { $regex: /^\s*$/ } },
+      ],
+    });
+  }
+
+  if (search) {
+    conditions.push({
+      $or: [
+        { name: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
+      ],
+    });
+  }
+
+  if (conditions.length > 0) {
+    filter.$and = conditions;
+  }
+
+  return filter;
+};
+
 // GET /api/prospects?postal_code=1000&category=restaurant&page=1&limit=20
 router.get("/", async (req, res) => {
   try {
-    const { postal_code, category, source, page = 1, limit = 20 } = req.query;
-
-    const filter = {};
-    if (postal_code) filter["address.postcode"] = postal_code;
-    if (category) filter.category = category;
-    if (source) filter.source = source;
+    const { page = 1, limit = 20 } = req.query;
+    const filter = buildProspectFilter(req.query);
 
     const skip = (Number(page) - 1) * Number(limit);
 
@@ -34,8 +72,8 @@ router.get("/", async (req, res) => {
 router.get("/stats", async (req, res) => {
   try {
     const total = await Prospect.countDocuments();
-    const emailsCount = await Prospect.countDocuments({ email: { $ne: null } });
-    const websitesCount = await Prospect.countDocuments({ website: { $ne: null } });
+    const emailsCount = await Prospect.countDocuments({ email: { $regex: /\S/ } });
+    const websitesCount = await Prospect.countDocuments({ website: { $regex: /\S/ } });
 
     // Répartition par catégorie
     const byCategory = await Prospect.aggregate([
@@ -188,22 +226,8 @@ router.get("/export/excel", async (req, res) => {
 // GET /api/prospects/:id
 router.get("/:id", async (req, res) => {
   try {
-    const { postal_code, category, source, search, email, score_min, page = 1, limit = 20 } = req.query;
-
-    const filter = {};
-    if (postal_code) filter["address.postcode"] = postal_code;
-    if (category) filter.category = category;
-    if (source) filter.source = source.toLowerCase();
-    if (email === "Disponible") filter.email = { $ne: null };
-    if (email === "Non disponible") filter.email = null;
-    if (score_min) filter.score = { $gte: Number(score_min) };
-    if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { "address.city": { $regex: search, $options: "i" } },
-        { category: { $regex: search, $options: "i" } },
-      ];
-    }
+    const { page = 1, limit = 20 } = req.query;
+    const filter = buildProspectFilter(req.query);
 
     const skip = (Number(page) - 1) * Number(limit);
 
