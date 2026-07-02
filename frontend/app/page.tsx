@@ -48,12 +48,20 @@ interface Report {
 }
 
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL;
+const LOADING_STEPS = [
+  "Interrogation d'OpenStreetMap (OSM) pour la Belgique...",
+  "Extraction et filtrage des coordonnées de contact...",
+  "Analyse de la présence digitale et calcul du score de maturité...",
+  "Génération de l'argumentaire personnalisé via Groq...",
+  "Finalisation et structuration de la fiche prospect..."
+];
 
 export default function Home() {
   function nowTime() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
 
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -70,29 +78,33 @@ export default function Home() {
 
   // 1. Premier useEffect : S'exécute uniquement sur le client après le rendu initial
   useEffect(() => {
-    setMounted(true);
-    
-    const hour = new Date().getHours();
-    setGreeting(hour >= 18 ? "Bonsoir" : "Bonjour");
+    const initTimeout = setTimeout(() => {
+      const hour = new Date().getHours();
+      setGreeting(hour >= 18 ? "Bonsoir" : "Bonjour");
 
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("agent_chat_history");
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessages(parsed);
-            setShowSplash(false); // Historique trouvé -> Pas de splash screen
-            return;
+      if (typeof window !== "undefined") {
+        const saved = localStorage.getItem("agent_chat_history");
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setMessages(parsed);
+              setShowSplash(false); // Historique trouvé -> Pas de splash screen
+              setMounted(true);
+              return;
+            }
+          } catch (e) {
+            console.error("Erreur historique:", e);
           }
-        } catch (e) {
-          console.error("Erreur historique:", e);
         }
+
+        // Si aucun historique n'est trouvé, c'est le premier lancement !
+        setShowSplash(true);
+        setMounted(true);
       }
-      
-      // Si aucun historique n'est trouvé, c'est le premier lancement !
-      setShowSplash(true);
-    }
+    }, 0);
+
+    return () => clearTimeout(initTimeout);
   }, []);
 
   // 2. Deuxième useEffect : Gère les animations de disparition du splash screen s'il s'affiche
@@ -128,47 +140,59 @@ export default function Home() {
   }, [messages, mounted]);
 
   async function sendMessage(text: string) {
-    if (!text.trim()) return;
+  if (!text.trim()) return;
 
-    const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    setInput("");
-    setLoading(true);
+  const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
+  const updatedMessages = [...messages, userMessage];
+  setMessages(updatedMessages);
+  setInput("");
+  setLoading(true);
+  setCurrentStepIndex(0); // 🎯 Réinitialise à la première étape
 
-    try {
-      const res = await axios.post(`${AI_URL}/agent/chat`, {
-        message: text,
-        history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
-      });
-
-      const agentMessage: Message = {
-        role: "agent",
-        content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
-        timestamp: nowTime(),
-        suggestedActions: res.data?.suggested_actions,
-        report: res.data?.report,
-      };
-
-      setMessages((prev) => [...prev, agentMessage]);
-
-      if (res.data?.report) {
-        setActiveReport(res.data.report);
+  // 🎯 Intervalle pour simuler la progression des étapes de recherche
+  const stepInterval = setInterval(() => {
+    setCurrentStepIndex((prevIndex) => {
+      if (prevIndex < LOADING_STEPS.length - 1) {
+        return prevIndex + 1;
       }
-    } catch (error) {
-      console.error("Erreur agent:", error);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "agent",
-          content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
-          timestamp: nowTime(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
+      return prevIndex; // Reste sur la dernière étape si le backend prend plus de temps
+    });
+  }, 3500); // Change d'étape toutes les 3.5 secondes
+
+  try {
+    const res = await axios.post(`${AI_URL}/agent/chat`, {
+      message: text,
+      history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+    });
+
+    const agentMessage: Message = {
+      role: "agent",
+      content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
+      timestamp: nowTime(),
+      suggestedActions: res.data?.suggested_actions,
+      report: res.data?.report,
+    };
+
+    setMessages((prev) => [...prev, agentMessage]);
+
+    if (res.data?.report) {
+      setActiveReport(res.data.report);
     }
+  } catch (error) {
+    console.error("Erreur agent:", error);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "agent",
+        content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
+        timestamp: nowTime(),
+      },
+    ]);
+  } finally {
+    clearInterval(stepInterval); // 🎯 Pense à bien nettoyer l'intervalle
+    setLoading(false);
   }
+}
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -220,7 +244,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="text-lg md:text-xl text-slate-500 font-medium max-w-xl mx-auto">
-              Comment <span className="text-indigo-600 font-bold">BelgoData</span> peut-il vous aider aujourd'hui ?
+              Comment <span className="text-indigo-600 font-bold">BelgoData</span> peut-il vous aider aujourdhui ?
             </p>
           </div>
         </div>
@@ -314,19 +338,52 @@ export default function Home() {
             )}
 
             {loading && (
-              <div className="flex gap-4 justify-start animate-pulse">
-                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                  <Bot size={16} />
-                </div>
-                <div className="bg-slate-100 px-4 py-2.5 rounded-2xl rounded-tl-none text-xs text-slate-500 font-medium flex items-center gap-2">
-                  <span className="flex h-1.5 w-1.5 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
-                  </span>
-                  Analyse des données belges...
-                </div>
+  <div className="flex gap-4 justify-start animate-fade-in">
+    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+      <Bot size={16} />
+    </div>
+    <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-800 max-w-[78%] space-y-3">
+      
+      {/* Animation principale de chargement */}
+      <div className="flex items-center gap-3">
+        <span className="flex h-2 w-2 relative">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+        </span>
+        <span className="font-semibold bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent">
+          L&apos;Agent BelgoData s&apos;active...
+        </span>
+      </div>
+
+      {/* Liste des étapes dynamiques */}
+      <div className="space-y-2 pt-1 border-t border-slate-50">
+        {LOADING_STEPS.map((step, idx) => {
+          const isDone = idx < currentStepIndex;
+          const isActive = idx === currentStepIndex;
+
+          return (
+            <div 
+              key={idx} 
+              className={`flex items-center gap-2.5 text-xs transition-all duration-300 ${
+                isDone ? "text-emerald-600 font-medium" : isActive ? "text-indigo-600 font-bold animate-pulse" : "text-slate-400"
+              }`}
+            >
+              <div className={`w-4 h-4 rounded-full flex items-center justify-center border text-[9px] ${
+                isDone ? "bg-emerald-50 border-emerald-200" : isActive ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"
+              }`}>
+                {isDone ? "✓" : idx + 1}
               </div>
-            )}
+              <span className={isActive ? "translate-x-1 transition-transform" : ""}>
+                {step}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+    </div>
+  </div>
+)}
 
             <div ref={scrollRef} />
           </div>
@@ -448,7 +505,7 @@ export default function Home() {
               </div>
 
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l'analyse</h4>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l&apos;analyse</h4>
                 <p className="text-xs text-slate-600 leading-relaxed bg-white">{activeReport.analyse}</p>
               </div>
 
@@ -470,7 +527,7 @@ export default function Home() {
                 <div className="bg-rose-50/40 border border-rose-100/70 p-3.5 rounded-xl space-y-2">
                   <h4 className="font-bold text-xs text-rose-800 flex items-center gap-1.5">
                     <XCircle size={13} className="text-rose-500" />
-                    Axes d'amélioration
+                    Axes d&apos;amélioration
                   </h4>
                   <ul className="space-y-1.5">
                     {activeReport.faiblesses?.map((f, i) => (
@@ -483,8 +540,8 @@ export default function Home() {
               </div>
 
               <div className="bg-slate-900 text-slate-100 p-4 rounded-xl space-y-2 shadow-sm">
-                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d'approche conseillé</h4>
-                <p className="text-xs text-slate-300 leading-relaxed italic">"{activeReport.argumentaire}"</p>
+                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d&apos;approche conseillé</h4>
+                <p className="text-xs text-slate-300 leading-relaxed italic">&quot;{activeReport.argumentaire}&quot;</p>
               </div>
             </div>
 
@@ -493,7 +550,7 @@ export default function Home() {
                 href={`/rapports/${activeReport._id}`}
                 className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98]"
               >
-                Accéder au rapport d'analyse complet
+                Accéder au rapport d&apos;analyse complet
                 <ChevronRight size={14} />
               </a>
             </div>
@@ -502,7 +559,7 @@ export default function Home() {
       </div>
 
       <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
-        Données collectées via les registres publics et analysées par l'IA BelgoData. Validez les données critiques avant démarchage.
+        Données collectées via les registres publics et analysées par l&apos;IA BelgoData. Validez les données critiques avant démarchage.
       </footer>
     </div>
   );

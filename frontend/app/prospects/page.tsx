@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { Building2, Mail, Globe, Star, Target } from "lucide-react";
 import { CategoryBadge, CategoryIconCircle } from "@/components/utils/categoryIcons";
@@ -23,6 +23,8 @@ type Prospect = {
   score?: number;
   createdAt?: string;
 };
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
@@ -61,44 +63,68 @@ export default function ProspectsPage() {
     score: ""
   });
 
-  // Extraction et calcul des statistiques réelles basées sur la base (100% temps réel)
-  const stats = {
-    total: total,
-    emails: prospects.filter((p: Prospect) => p.email).length,
-    sites: prospects.filter((p: Prospect) => p.website).length,
-    avgScore: total > 0 ? Math.round(prospects.reduce((acc: number, p: Prospect) => acc + (p.score || 0), 0) / prospects.length) : 0,
-    hotLeads: prospects.filter((p: Prospect) => (p.score || 0) >= 80).length
-  };
+  const [stats, setStats] = useState({
+    total: 0,
+    emailsCount: 0,
+    websitesCount: 0,
+    avgScore: 0,
+    hotLeads: 0,
+    trends: {
+      total: 0,
+      emails: 0,
+      websites: 0,
+      avgScore: 0,
+      hotLeads: 0,
+    },
+  });
+
+  const fetchData = useCallback(async () => {
+    try {
+      let url = `${API_URL}/api/prospects?page=${page}&limit=${limit}`;
+
+      if (activeFilters.search) url += `&search=${encodeURIComponent(activeFilters.search)}`;
+      if (activeFilters.city !== "Toutes") url += `&postal_code=${activeFilters.city}`;
+      if (activeFilters.sector !== "Tous les secteurs") url += `&category=${encodeURIComponent(activeFilters.sector)}`;
+      if (activeFilters.source !== "Toutes") url += `&source=${activeFilters.source}`;
+      if (activeFilters.email !== "Toutes") url += `&email=${encodeURIComponent(activeFilters.email)}`;
+      if (activeFilters.score) url += `&score_min=${activeFilters.score}`;
+
+      const [prospectsRes, statsRes] = await Promise.all([
+        axios.get(url),
+        axios.get(`${API_URL}/api/prospects/stats`),
+      ]);
+
+      setProspects(prospectsRes.data.results || []);
+      setTotal(prospectsRes.data.total || 0);
+      setStats(statsRes.data || {
+        total: 0,
+        emailsCount: 0,
+        websitesCount: 0,
+        avgScore: 0,
+        hotLeads: 0,
+        trends: {
+          total: 0,
+          emails: 0,
+          websites: 0,
+          avgScore: 0,
+          hotLeads: 0,
+        },
+      });
+    } catch (error) {
+      console.error("Erreur lors de la récupération des prospects", error);
+    }
+  }, [page, limit, activeFilters]);
 
   useEffect(() => {
-    const fetchProspects = async () => {
-      try {
-        let url = `http://localhost:5000/api/prospects?page=${page}&limit=${limit}`;
-
-        if (activeFilters.search) url += `&search=${encodeURIComponent(activeFilters.search)}`;
-        if (activeFilters.city !== "Toutes") url += `&postal_code=${activeFilters.city}`;
-        if (activeFilters.sector !== "Tous les secteurs") url += `&category=${encodeURIComponent(activeFilters.sector)}`;
-        if (activeFilters.source !== "Toutes") url += `&source=${activeFilters.source}`;
-        if (activeFilters.email !== "Toutes") url += `&email=${encodeURIComponent(activeFilters.email)}`;
-        if (activeFilters.score) url += `&score_min=${activeFilters.score}`;
-
-        const res = await axios.get(url);
-        setProspects(res.data.results || []);
-        setTotal(res.data.total || 0);
-      } catch (error) {
-        console.error("Erreur lors de la récupération des prospects", error);
-      }
-    };
-    fetchProspects();
-  }, [page, limit, activeFilters]);
+    fetchData();
+  }, [fetchData]);
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`Supprimer "${name}" de la base de prospects ?`)) return;
 
     try {
-      await axios.delete(`http://localhost:5000/api/prospects/${id}`);
-      setProspects((prev) => prev.filter((p) => p._id !== id));
-      setTotal((prev) => prev - 1);
+      await axios.delete(`${API_URL}/api/prospects/${id}`);
+      await fetchData();
     } catch (error) {
       console.error("Erreur lors de la suppression:", error);
       alert("Erreur lors de la suppression du prospect.");
@@ -134,7 +160,7 @@ export default function ProspectsPage() {
   async function handleAddProspect(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await axios.post("http://localhost:5000/api/prospects", {
+      await axios.post(`${API_URL}/api/prospects`, {
         name: newProspect.name,
         category: newProspect.category,
         address: {
@@ -148,7 +174,7 @@ export default function ProspectsPage() {
       });
       setShowAddModal(false);
       setNewProspect({ name: "", category: "Autre", street: "", city: "", postcode: "", phone: "", email: "", website: "" });
-      setActiveFilters({ ...activeFilters }); // force le refetch
+      await fetchData();
     } catch (error) {
       console.error("Erreur ajout prospect:", error);
       alert("Erreur lors de l'ajout du prospect.");
@@ -166,9 +192,8 @@ export default function ProspectsPage() {
     if (!confirm(`Supprimer ${selectedIds.length} prospect(s) sélectionné(s) ?`)) return;
 
     try {
-      await Promise.all(selectedIds.map((id) => axios.delete(`http://localhost:5000/api/prospects/${id}`)));
-      setProspects((prev) => prev.filter((p) => !selectedIds.includes(p._id!)));
-      setTotal((prev) => prev - selectedIds.length);
+      await Promise.all(selectedIds.map((id) => axios.delete(`${API_URL}/api/prospects/${id}`)));
+      await fetchData();
       setSelectedIds([]);
     } catch (error) {
       console.error("Erreur suppression en masse:", error);
@@ -179,6 +204,19 @@ export default function ProspectsPage() {
     if (!dateStr) return "12/06/2025\n10:32";
     const d = new Date(dateStr);
     return `${d.toLocaleDateString("fr-FR")} à ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  };
+
+  const renderTrend = (value: number) => {
+    const isPositive = value > 0;
+    const isNegative = value < 0;
+    const color = isPositive ? "text-emerald-600" : isNegative ? "text-red-600" : "text-slate-500";
+    const arrow = isPositive ? "↗" : isNegative ? "↘" : "→";
+
+    return (
+      <p className={`text-[11px] ${color} font-semibold mt-0.5`}>
+        {arrow} {Math.abs(value)}% <span className="text-slate-400 font-normal">vs période précédente</span>
+      </p>
+    );
   };
 
   return (
@@ -193,9 +231,7 @@ export default function ProspectsPage() {
           >
             <span>+</span> Ajouter un prospect
           </button>
-          <button className="bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition flex items-center gap-2">
-            Exporter <span className="text-slate-400 text-xs">▼</span>
-          </button>
+          
         </div>
       </div>
       <p className="text-sm text-slate-500 mb-8">Gérez et consultez l&apos;ensemble de vos entreprises prospects</p>
@@ -209,7 +245,7 @@ export default function ProspectsPage() {
           <div>
             <p className="text-xs text-slate-400 font-medium">Total prospects</p>
             <p className="text-xl font-bold text-slate-800">{stats.total}</p>
-            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">↗ 12.5% <span className="text-slate-400 font-normal">vs période précédente</span></p>
+            {renderTrend(stats.trends.total)}
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
@@ -218,8 +254,8 @@ export default function ProspectsPage() {
           </div>
           <div>
             <p className="text-xs text-slate-400 font-medium">Emails trouvés</p>
-            <p className="text-xl font-bold text-slate-800">{stats.emails}</p>
-            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">↗ 15.2% <span className="text-slate-400 font-normal">vs période précédente</span></p>
+            <p className="text-xl font-bold text-slate-800">{stats.emailsCount}</p>
+            {renderTrend(stats.trends.emails)}
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
@@ -228,8 +264,8 @@ export default function ProspectsPage() {
           </div>
           <div>
             <p className="text-xs text-slate-400 font-medium">Sites web trouvés</p>
-            <p className="text-xl font-bold text-slate-800">{stats.sites}</p>
-            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">↗ 10.8% <span className="text-slate-400 font-normal">vs période précédente</span></p>
+            <p className="text-xl font-bold text-slate-800">{stats.websitesCount}</p>
+            {renderTrend(stats.trends.websites)}
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
@@ -239,7 +275,7 @@ export default function ProspectsPage() {
           <div>
             <p className="text-xs text-slate-400 font-medium">Score moyen</p>
             <p className="text-xl font-bold text-slate-800">{stats.avgScore}<span className="text-xs text-slate-400"> /100</span></p>
-            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">↗ 6.3% <span className="text-slate-400 font-normal">vs période précédente</span></p>
+            {renderTrend(stats.trends.avgScore)}
           </div>
         </div>
         <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
@@ -249,7 +285,7 @@ export default function ProspectsPage() {
           <div>
             <p className="text-xs text-slate-400 font-medium">Leads chauds</p>
             <p className="text-xl font-bold text-slate-800">{stats.hotLeads}</p>
-            <p className="text-[11px] text-emerald-600 font-semibold mt-0.5">↗ 18.7% <span className="text-slate-400 font-normal">vs période précédente</span></p>
+            {renderTrend(stats.trends.hotLeads)}
           </div>
         </div>
       </div>

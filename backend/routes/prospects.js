@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Prospect = require("../models/Prospect");
+const { calculateGrowthRate } = require("../utils/prospectStats");
 
 const buildProspectFilter = (query) => {
   const { postal_code, category, source, search, email, score_min } = query;
@@ -71,36 +72,95 @@ router.get("/", async (req, res) => {
 // GET /api/prospects/stats - statistiques agrégées pour le Dashboard
 router.get("/stats", async (req, res) => {
   try {
-    const total = await Prospect.countDocuments();
-    const emailsCount = await Prospect.countDocuments({ email: { $regex: /\S/ } });
-    const websitesCount = await Prospect.countDocuments({ website: { $regex: /\S/ } });
+    const currentEnd = new Date();
+    currentEnd.setHours(23, 59, 59, 999);
+    const currentStart = new Date(currentEnd);
+    currentStart.setDate(currentEnd.getDate() - 29);
+    currentStart.setHours(0, 0, 0, 0);
 
-    // Répartition par catégorie
-    const byCategory = await Prospect.aggregate([
-      { $group: { _id: "$category", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
+    const previousEnd = new Date(currentStart);
+    previousEnd.setDate(previousEnd.getDate() - 1);
+    previousEnd.setHours(23, 59, 59, 999);
+    const previousStart = new Date(currentStart);
+    previousStart.setDate(previousStart.getDate() - 29);
+    previousStart.setHours(0, 0, 0, 0);
+
+    const periodMatch = (start, end) => ({ createdAt: { $gte: start, $lte: end } });
+
+    const [total, emailsCount, websitesCount, avgScoreResult, hotLeadsCount, currentPeriodStats, previousPeriodStats, byCategory, bySource, byPostcode, recent] = await Promise.all([
+      Prospect.countDocuments(),
+      Prospect.countDocuments({ email: { $regex: /\S/ } }),
+      Prospect.countDocuments({ website: { $regex: /\S/ } }),
+      Prospect.aggregate([
+        { $match: { score: { $ne: null } } },
+        { $group: { _id: null, avgScore: { $avg: "$score" } } },
+      ]),
+      Prospect.countDocuments({ score: { $gte: 80 } }),
+      Promise.all([
+        Prospect.countDocuments(periodMatch(currentStart, currentEnd)),
+        Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), email: { $regex: /\S/ } }),
+        Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), website: { $regex: /\S/ } }),
+        Prospect.aggregate([
+          { $match: { ...periodMatch(currentStart, currentEnd), score: { $ne: null } } },
+          { $group: { _id: null, avgScore: { $avg: "$score" } } },
+        ]),
+        Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), score: { $gte: 80 } }),
+      ]),
+      Promise.all([
+        Prospect.countDocuments(periodMatch(previousStart, previousEnd)),
+        Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), email: { $regex: /\S/ } }),
+        Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), website: { $regex: /\S/ } }),
+        Prospect.aggregate([
+          { $match: { ...periodMatch(previousStart, previousEnd), score: { $ne: null } } },
+          { $group: { _id: null, avgScore: { $avg: "$score" } } },
+        ]),
+        Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), score: { $gte: 80 } }),
+      ]),
+      Prospect.aggregate([
+        { $group: { _id: "$category", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      Prospect.aggregate([
+        { $group: { _id: "$source", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+      ]),
+      Prospect.aggregate([
+        { $group: { _id: "$address.postcode", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]),
+      Prospect.find().sort({ createdAt: -1 }).limit(5),
     ]);
 
-    // Répartition par source
-    const bySource = await Prospect.aggregate([
-      { $group: { _id: "$source", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-    ]);
-
-    // Répartition par code postal (proxy pour la géo, en attendant la province)
-    const byPostcode = await Prospect.aggregate([
-      { $group: { _id: "$address.postcode", count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: 10 },
-    ]);
-
-    // Derniers prospects ajoutés
-    const recent = await Prospect.find().sort({ createdAt: -1 }).limit(5);
+    const avgScore = Math.round(avgScoreResult[0]?.avgScore ?? 0);
+    const currentValues = [
+      currentPeriodStats[0],
+      currentPeriodStats[1],
+      currentPeriodStats[2],
+      Math.round(currentPeriodStats[3][0]?.avgScore ?? 0),
+      currentPeriodStats[4],
+    ];
+    const previousValues = [
+      previousPeriodStats[0],
+      previousPeriodStats[1],
+      previousPeriodStats[2],
+      Math.round(previousPeriodStats[3][0]?.avgScore ?? 0),
+      previousPeriodStats[4],
+    ];
 
     res.json({
       total,
       emailsCount,
       websitesCount,
+      avgScore,
+      hotLeads: hotLeadsCount,
+      trends: {
+        total: calculateGrowthRate(currentValues[0], previousValues[0]),
+        emails: calculateGrowthRate(currentValues[1], previousValues[1]),
+        websites: calculateGrowthRate(currentValues[2], previousValues[2]),
+        avgScore: calculateGrowthRate(currentValues[3], previousValues[3]),
+        hotLeads: calculateGrowthRate(currentValues[4], previousValues[4]),
+      },
       byCategory,
       bySource,
       byPostcode,
@@ -291,5 +351,65 @@ router.post("/", async (req, res) => {
   }
 });
 
+// --- helper: préfixe code postal belge -> code ISO province ---
+const PROVINCES = [
+  { id: "BE-BRU", name: "Bruxelles" },
+  { id: "BE-VAN", name: "Anvers" },
+  { id: "BE-VBR", name: "Brabant flamand" },
+  { id: "BE-WBR", name: "Brabant wallon" },
+  { id: "BE-VWV", name: "Flandre-Occidentale" },
+  { id: "BE-VOV", name: "Flandre-Orientale" },
+  { id: "BE-WHT", name: "Hainaut" },
+  { id: "BE-WLG", name: "Liège" },
+  { id: "BE-VLI", name: "Limbourg" },
+  { id: "BE-WLX", name: "Luxembourg" },
+  { id: "BE-WNA", name: "Namur" },
+];
+
+function cpToProvince(cp) {
+  const n = parseInt(String(cp).trim(), 10);
+  if (!n) return null;
+  if (n >= 1000 && n <= 1299) return "BE-BRU";
+  if (n >= 1300 && n <= 1499) return "BE-WBR";
+  if ((n >= 1500 && n <= 1999) || (n >= 3000 && n <= 3499)) return "BE-VBR";
+  if (n >= 2000 && n <= 2999) return "BE-VAN";
+  if (n >= 3500 && n <= 3999) return "BE-VLI";
+  if (n >= 4000 && n <= 4999) return "BE-WLG";
+  if (n >= 5000 && n <= 5999) return "BE-WNA";
+  if ((n >= 6000 && n <= 6599) || (n >= 7000 && n <= 7999)) return "BE-WHT";
+  if (n >= 6600 && n <= 6999) return "BE-WLX";
+  if (n >= 8000 && n <= 8999) return "BE-VWV";
+  if (n >= 9000 && n <= 9999) return "BE-VOV";
+  return null;
+}
+
+// GET /dashboard/geo-distribution
+router.get("/dashboard/geo-distribution", async (req, res) => {
+  try {
+    const rows = await Prospect.find({}, "address.postcode").lean();
+
+    const counts = Object.fromEntries(PROVINCES.map((p) => [p.id, 0]));
+    for (const row of rows) {
+      const id = cpToProvince(row?.address?.postcode);
+      if (id) counts[id]++;
+    }
+
+    const total = Object.values(counts).reduce((sum, value) => sum + value, 0) || 1;
+
+    const data = PROVINCES.map((p) => ({
+      id: p.id,
+      name: p.name,
+      count: counts[p.id],
+      percentage: total > 0 ? Number(((counts[p.id] / total) * 100).toFixed(1)) : 0,
+    }))
+      .filter((item) => item.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    res.json({ total, data });
+  } catch (error) {
+    console.error("❌ Erreur distribution géo:", error);
+    res.status(500).json({ error: "geo_distribution_failed" });
+  }
+});
 
 module.exports = router;

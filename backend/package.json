@@ -11,11 +11,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "json2csv": "^6.0.0-alpha.2",
+    "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.7.2",
     "pdfkit": "^0.19.1"
   },

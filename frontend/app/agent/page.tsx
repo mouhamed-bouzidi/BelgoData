@@ -415,7 +415,7 @@ export default function AgentPage() {
 
               {/* Analyse descriptive */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l'analyse</h4>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l&apos;analyse</h4>
                 <p className="text-xs text-slate-600 leading-relaxed bg-white">{activeReport.analyse}</p>
               </div>
 
@@ -438,7 +438,7 @@ export default function AgentPage() {
                 <div className="bg-rose-50/40 border border-rose-100/70 p-3.5 rounded-xl space-y-2">
                   <h4 className="font-bold text-xs text-rose-800 flex items-center gap-1.5">
                     <XCircle size={13} className="text-rose-500" />
-                    Axes d'amélioration
+                    Axes d&apos;amélioration
                   </h4>
                   <ul className="space-y-1.5">
                     {activeReport.faiblesses?.map((f, i) => (
@@ -452,8 +452,8 @@ export default function AgentPage() {
 
               {/* Pitch commercial personnalisé */}
               <div className="bg-slate-900 text-slate-100 p-4 rounded-xl space-y-2 shadow-sm">
-                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d'approche conseillé</h4>
-                <p className="text-xs text-slate-300 leading-relaxed italic">"{activeReport.argumentaire}"</p>
+                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d&apos;approche conseillé</h4>
+                <p className="text-xs text-slate-300 leading-relaxed italic">&quot;{activeReport.argumentaire}&quot;</p>
               </div>
             </div>
 
@@ -463,7 +463,7 @@ export default function AgentPage() {
                 href={`/rapports/${activeReport._id}`}
                 className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98]"
               >
-                Accéder au rapport d'analyse complet
+                Accéder au rapport d&apos;analyse complet
                 <ChevronRight size={14} />
               </a>
             </div>
@@ -473,7 +473,7 @@ export default function AgentPage() {
 
       {/* FOOTER DISCRET */}
       <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
-        Données collectées via les registres publics et analysées par l'IA BelgoData. Validez les données critiques avant démarchage.
+        Données collectées via les registres publics et analysées par l&apos;IA BelgoData. Validez les données critiques avant démarchage.
       </footer>
     </div>
   );

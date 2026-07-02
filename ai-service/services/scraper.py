@@ -4,6 +4,8 @@ import json
 import urllib.request
 import re
 from datetime import datetime, timezone
+import logging
+import requests
 
 OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
 USER_AGENT = os.getenv("NOMINATIM_USER_AGENT", "BelgoData-Dev/1.0")  # même UA, réutilisé
@@ -134,6 +136,9 @@ def build_overpass_query(bbox: dict, category: str) -> str:
     return query
 
 
+# Configuration d'un logger pour voir les alertes dans les logs Docker
+logger = logging.getLogger(__name__)
+
 def query_overpass(bbox: dict, category: str) -> dict:
     query = build_overpass_query(bbox, category)
     headers = {
@@ -141,15 +146,29 @@ def query_overpass(bbox: dict, category: str) -> dict:
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
     }
-    response = requests.post(
-        OVERPASS_URL,
-        data={"data": query},
-        headers=headers,
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()  
+    
+    try:
+        response = requests.post(
+            OVERPASS_URL,
+            data={"data": query},
+            headers=headers,
+            timeout=30,  # Conserve le timeout de 30s
+        )
+        # Lève une exception si le statut HTTP est une erreur (ex: 504, 500, 404)
+        response.raise_for_status()
+        return response.json()
 
+    except requests.exceptions.Timeout:
+        logger.error(f"⏳ Timeout de 30s dépassé pour Overpass API (Catégorie: {category})")
+        return {"elements": []}
+
+    except requests.exceptions.HTTPError as http_err:
+        logger.error(f"❌ Erreur HTTP Overpass ({response.status_code}) : {http_err}")
+        return {"elements": []}
+
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"⚠️ Erreur réseau globale lors de la requête Overpass : {req_err}")
+        return {"elements": []}
 
 def clean_category(raw_category: str | None) -> str:
     """

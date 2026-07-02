@@ -9,13 +9,15 @@ dotenv.config({ path: path.join(__dirname, '..', '.env'), debug: false });
 const connectDB = require("./config/db");
 const prospectsRoutes = require("./routes/prospects");
 const reportsRoutes = require("./routes/reports");
-const usersRoutes = require("./routes/users");
+const authRoutes = require("./routes/auth");
 const settingsRoutes = require("./routes/settings");
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+app.use(cors({
+  origin: 'http://localhost:3000', 
+  credentials: true
+}));app.use(express.json());
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "backend" });
@@ -23,7 +25,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/reports", reportsRoutes);
 app.use("/api/prospects", prospectsRoutes);
-app.use("/api/users", usersRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
 
 const PORT = process.env.PORT_BACKEND || 5000;

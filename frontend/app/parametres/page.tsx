@@ -18,12 +18,74 @@ interface SettingsData {
   darkMode: boolean;
   notificationsSound: boolean;
   maskSensitiveData: boolean;
+  notificationsEmailAlerts: string;
+  weeklyReportEmail: string;
+  autoRefreshData: boolean;
+  activityLogEnabled: boolean;
+  twoFactorEnabled: boolean;
+  sessionTimeout: string;
+  allowPublicSharing: boolean;
+  nominatimDelay: string;
+  overpassDelay: string;
+  maxResults: number;
+  coordinatesCacheDays: number;
+  strictRateLimit: boolean;
+  retryOnError: boolean;
+  maxRetries: number;
+  exportFormat: string;
+  exportIncludeImages: boolean;
+  autoExport: boolean;
+  webhookUrl: string;
+  slackNotifications: boolean;
+  googleSheetsSync: boolean;
+  maintenanceMode: boolean;
+  backupFrequency: string;
+  logRetentionDays: number;
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+const defaultSettings: SettingsData = {
+  companyName: "3LM Solutions",
+  companyEmail: "contact@3lmsolutions.net",
+  companyPhone: "+216 25 632 134",
+  companyAddress: "AV 18 janvier, Ariana Médina 2080",
+  companyCountry: "Tunisie",
+  companyTimezone: "(UTC+01:00) Tunis",
+  interfaceLanguage: "Français",
+  currency: "EUR (€)",
+  dateFormat: "DD/MM/YYYY",
+  itemsPerPage: 50,
+  darkMode: false,
+  notificationsSound: true,
+  maskSensitiveData: false,
+  notificationsEmailAlerts: "contact@3lmsolutions.net",
+  weeklyReportEmail: "ops@3lmsolutions.net",
+  autoRefreshData: true,
+  activityLogEnabled: true,
+  twoFactorEnabled: false,
+  sessionTimeout: "30 min",
+  allowPublicSharing: false,
+  nominatimDelay: "1 seconde",
+  overpassDelay: "2 secondes",
+  maxResults: 1000,
+  coordinatesCacheDays: 30,
+  strictRateLimit: true,
+  retryOnError: true,
+  maxRetries: 3,
+  exportFormat: "CSV",
+  exportIncludeImages: false,
+  autoExport: true,
+  webhookUrl: "",
+  slackNotifications: false,
+  googleSheetsSync: false,
+  maintenanceMode: false,
+  backupFrequency: "Quotidienne",
+  logRetentionDays: 90,
+};
+
 export default function SettingsPage() {
-  const [formData, setFormData] = useState<SettingsData | null>(null);
+  const [formData, setFormData] = useState<SettingsData>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState(false);
@@ -33,7 +95,7 @@ export default function SettingsPage() {
     async function loadSettings() {
       try {
         const res = await axios.get(`${API_URL}/api/settings`);
-        setFormData(res.data);
+        setFormData({ ...defaultSettings, ...res.data });
       } catch (error) {
         console.error("Erreur lors du chargement des paramètres:", error);
       } finally {
@@ -44,25 +106,23 @@ export default function SettingsPage() {
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    if (!formData) return;
     const { name, value } = e.target;
+    const numericFields = ["itemsPerPage", "maxResults", "coordinatesCacheDays", "maxRetries", "logRetentionDays"];
     setFormData({
       ...formData,
-      [name]: name === "itemsPerPage" ? parseInt(value) || 0 : value
+      [name]: numericFields.includes(name) ? Number.parseInt(value, 10) || 0 : value,
     });
   };
 
   const handleToggle = (name: keyof SettingsData) => {
-    if (!formData) return;
     setFormData({
       ...formData,
-      [name]: !formData[name]
+      [name]: !formData[name],
     });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData) return;
     try {
       setSaving(true);
       await axios.put(`${API_URL}/api/settings`, formData);
@@ -123,10 +183,8 @@ export default function SettingsPage() {
         </div>
 
         {/* Main Content Grid (Optimized Layout) */}
-        {formData && activeTab === "Général" && (
+        {activeTab === "Général" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            {/* Left/Middle Column (Form inputs) */}
             <div className="lg:col-span-2 space-y-6">
               
               {/* Company Info Box */}
@@ -253,6 +311,170 @@ export default function SettingsPage() {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {activeTab === "Notifications" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">Alertes et rappels</h3>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Activer les sonneries de notification</span>
+                <button type="button" onClick={() => handleToggle("notificationsSound")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.notificationsSound ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Email pour les alertes</label>
+                <input type="email" name="notificationsEmailAlerts" value={formData.notificationsEmailAlerts} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Email pour les rapports hebdomadaires</label>
+                <input type="email" name="weeklyReportEmail" value={formData.weeklyReportEmail} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Actualisation automatique des données</span>
+                <button type="button" onClick={() => handleToggle("autoRefreshData")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.autoRefreshData ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Journalisation des activités</span>
+                <button type="button" onClick={() => handleToggle("activityLogEnabled")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.activityLogEnabled ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Sécurité" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">Protection des accès</h3>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Authentification à deux facteurs</span>
+                <button type="button" onClick={() => handleToggle("twoFactorEnabled")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.twoFactorEnabled ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Partage public autorisé</span>
+                <button type="button" onClick={() => handleToggle("allowPublicSharing")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.allowPublicSharing ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Temps de session</label>
+                <select name="sessionTimeout" value={formData.sessionTimeout} onChange={handleChange} className="w-full px-3 py-2.5 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700">
+                  <option>15 min</option>
+                  <option>30 min</option>
+                  <option>60 min</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Sources de données" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">Scraping et géocodage</h3>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Délai Nominatim</label>
+                <select name="nominatimDelay" value={formData.nominatimDelay} onChange={handleChange} className="w-full px-3 py-2.5 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700">
+                  <option>1 seconde</option>
+                  <option>2 secondes</option>
+                  <option>5 secondes</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Délai Overpass</label>
+                <select name="overpassDelay" value={formData.overpassDelay} onChange={handleChange} className="w-full px-3 py-2.5 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700">
+                  <option>1 seconde</option>
+                  <option>2 secondes</option>
+                  <option>5 secondes</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Nombre maximal de résultats</label>
+                <input type="number" name="maxResults" value={formData.maxResults} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Durée du cache des coordonnées (jours)</label>
+                <input type="number" name="coordinatesCacheDays" value={formData.coordinatesCacheDays} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Limiter strictement les requêtes</span>
+                <button type="button" onClick={() => handleToggle("strictRateLimit")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.strictRateLimit ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Réessayer en cas d&apos;erreur</span>
+                <button type="button" onClick={() => handleToggle("retryOnError")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.retryOnError ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Nombre maximal de tentatives</label>
+                <input type="number" name="maxRetries" value={formData.maxRetries} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Exports" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">Format et automatisation</h3>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Format d&apos;export</label>
+                <select name="exportFormat" value={formData.exportFormat} onChange={handleChange} className="w-full px-3 py-2.5 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700">
+                  <option>CSV</option>
+                  <option>XLSX</option>
+                  <option>PDF</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Inclure les images dans les exports</span>
+                <button type="button" onClick={() => handleToggle("exportIncludeImages")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.exportIncludeImages ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Export automatique hebdomadaire</span>
+                <button type="button" onClick={() => handleToggle("autoExport")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.autoExport ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Intégrations" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">Webhooks et synchronisation</h3>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Webhook principal</label>
+                <input type="text" name="webhookUrl" value={formData.webhookUrl} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Notifications Slack</span>
+                <button type="button" onClick={() => handleToggle("slackNotifications")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.slackNotifications ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Synchronisation Google Sheets</span>
+                <button type="button" onClick={() => handleToggle("googleSheetsSync")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.googleSheetsSync ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "Système" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
+              <h3 className="text-sm font-bold text-gray-900">Maintenance et logs</h3>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-gray-600">Mode maintenance</span>
+                <button type="button" onClick={() => handleToggle("maintenanceMode")} className={`w-9 h-5 rounded-full p-0.5 transition-colors ${formData.maintenanceMode ? "bg-accent flex justify-end" : "bg-gray-200 flex justify-start"}`}><span className="w-4 h-4 bg-white rounded-full shadow-sm"></span></button>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Fréquence des sauvegardes</label>
+                <select name="backupFrequency" value={formData.backupFrequency} onChange={handleChange} className="w-full px-3 py-2.5 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700">
+                  <option>Quotidienne</option>
+                  <option>Hebdomadaire</option>
+                  <option>Mensuelle</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-gray-400 uppercase mb-1">Conservation des logs (jours)</label>
+                <input type="number" name="logRetentionDays" value={formData.logRetentionDays} onChange={handleChange} className="w-full px-3 py-2 bg-white border border-border-color rounded-xl text-sm outline-none focus:border-accent transition-colors text-gray-700" />
+              </div>
+            </div>
           </div>
         )}
       </form>
