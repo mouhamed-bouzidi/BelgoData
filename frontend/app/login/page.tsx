@@ -35,11 +35,15 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-blue flex items-center justify-center">
-            <Building2 size={20} className="text-white" />
+          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent to-gray flex items-center justify-center">
+            <img 
+            src="logo1.png" alt="" 
+            
+            />
+            
           </div>
           <div>
-            <div className="font-bold text-gray-900">B2B Extractor IA</div>
+            <div className="font-bold text-gray-900">BelgoData IA</div>
             <div className="text-xs text-gray-400">Belgique</div>
           </div>
         </div>

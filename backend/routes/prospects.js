@@ -2,7 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Prospect = require("../models/Prospect");
 const { calculateGrowthRate } = require("../utils/prospectStats");
-
+const authMiddleware = require("../middleware/auth");
+const authorizeRoles = require("../middleware/roleMiddleware");
 const buildProspectFilter = (query) => {
   const { postal_code, category, source, search, email, score_min } = query;
   const filter = {};
@@ -46,7 +47,7 @@ const buildProspectFilter = (query) => {
 };
 
 // GET /api/prospects?postal_code=1000&category=restaurant&page=1&limit=20
-router.get("/", async (req, res) => {
+router.get("/",authMiddleware, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     const filter = buildProspectFilter(req.query);
@@ -303,7 +304,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // DELETE /api/prospects/:id
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authMiddleware, authorizeRoles("Administrateur", "Commercial"),async (req, res) => {
   try {
     const deleted = await Prospect.findByIdAndDelete(req.params.id);
     if (!deleted) {
@@ -316,7 +317,7 @@ router.delete("/:id", async (req, res) => {
 });
 
 // POST /api/prospects - ajout manuel
-router.post("/", async (req, res) => {
+router.post("/", authMiddleware, authorizeRoles("Administrateur", "Commercial"),async (req, res) => {
   try {
     const { name, category, address, phone, email, website } = req.body;
 

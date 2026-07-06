@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { redirect } from "next/navigation";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 import { 
   Bot, 
   Sparkles, 
@@ -66,6 +67,7 @@ export default function AgentPage() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
 
+  const { user } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -73,7 +75,7 @@ export default function AgentPage() {
   const [activeReport, setActiveReport] = useState<Report | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const [userName] = useState("Mohamed Ali");
+  const userName = user?.name || "Utilisateur";
   const [greeting, setGreeting] = useState("Bonjour");
 
   useEffect(() => {

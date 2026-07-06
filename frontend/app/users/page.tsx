@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import axios from "axios";
-import { CheckCircle2, XCircle, Calendar, Mail, Phone } from "lucide-react";
+import { CheckCircle2, XCircle, Calendar, Mail, Phone, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface User {
@@ -10,39 +10,110 @@ interface User {
   name: string;
   email: string;
   phone: string;
+  avatarUrl?: string | null;
   role: "Administrateur" | "Commercial" | "Viewer";
   status: "Actif" | "Inactif";
   lastLogin: string;
   createdAt: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function UsersPage() {
-  const { token } = useAuth();
+  const { token, loading: authLoading, user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const res = await axios.get(`${API_URL}/api/auth/users`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        setUsers(Array.isArray(res.data) ? res.data : []);
-      } catch (err) {
-        console.error("Erreur lors du chargement des utilisateurs :", err);
-        setError("Impossible de charger la liste des utilisateurs.");
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchUsers();
+  // Helper pour obtenir la configuration d'authentification avec token actif
+  const getAuthConfig = useCallback(() => {
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
   }, [token]);
 
-  if (loading) {
+  // Fonction de récupération de l'équipe (mémorisée pour éviter les boucles infinies)
+  const fetchUsers = useCallback(async () => {
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    
+    if (!activeToken) {
+      console.warn("Pas de token disponible, attente de l'authentification...");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/api/auth/users`, getAuthConfig());
+      setUsers(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Erreur lors du chargement des utilisateurs :", err);
+      setError("Impossible de charger la liste des utilisateurs.");
+    } finally {
+      setLoading(false);
+    }
+  }, [token, getAuthConfig]);
+
+  // Chargement initial sécurisé par rapport au chargement du contexte global d'auth
+  useEffect(() => {
+    if (!authLoading) {
+      fetchUsers();
+    }
+  }, [fetchUsers, authLoading]);
+
+  // Modification du rôle d'un utilisateur
+  async function handleRoleChange(userId: string, newRole: User["role"]) {
+    setActionLoadingId(userId);
+    try {
+      await axios.put(
+        `${API_URL}/api/auth/users/${userId}`,
+        { role: newRole },
+        getAuthConfig()
+      );
+      // Mise à jour de l'état local
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      );
+    } catch (err: unknown) {
+      console.error("Erreur changement rôle :", err);
+      const errorMessage =
+        axios.isAxiosError(err)
+          ? err.response?.data?.error || "Erreur lors de la mise à jour du rôle."
+          : "Erreur lors de la mise à jour du rôle.";
+      alert(errorMessage);
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  // Suppression d'un utilisateur
+  async function handleDeleteUser(userId: string, userName: string) {
+    if (currentUser && currentUser.id === userId) {
+      alert("Sécurité : Vous ne pouvez pas supprimer votre propre compte administrateur.");
+      return;
+    }
+
+    if (!confirm(`Êtes-vous sûr de vouloir supprimer définitivement le compte de ${userName} ?`)) {
+      return;
+    }
+
+    setActionLoadingId(userId);
+    try {
+      await axios.delete(`${API_URL}/api/auth/users/${userId}`, getAuthConfig());
+      // Retrait de la liste locale
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+    } catch (err: unknown) {
+      console.error("Erreur suppression :", err);
+      const errorMessage =
+        axios.isAxiosError(err)
+          ? err.response?.data?.error || "Impossible de supprimer cet utilisateur."
+          : "Impossible de supprimer cet utilisateur.";
+      alert(errorMessage);
+    } finally {
+      setActionLoadingId(null);
+    }
+  }
+
+  if (authLoading || loading) {
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-3">
         <div className="w-10 h-10 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin"></div>
@@ -57,7 +128,7 @@ export default function UsersPage() {
       <div>
         <h1 className="text-3xl font-black text-gray-900 tracking-tight">Gestion des Utilisateurs</h1>
         <p className="text-sm font-medium text-gray-400 mt-0.5">
-          Contrôlez les accès et les rôles des membres de la plateforme
+          Contrôlez les accès, modifiez les rôles et gérez les membres de la plateforme
         </p>
       </div>
 
@@ -78,11 +149,11 @@ export default function UsersPage() {
                 <th className="px-6 py-4 font-bold">Rôle</th>
                 <th className="px-6 py-4 font-bold">Statut</th>
                 <th className="px-6 py-4 font-bold">Dernière Connexion</th>
+                <th className="px-6 py-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {users.map((u) => {
-                // Couleurs dynamiques selon le badge de rôle
                 const roleColors = {
                   Administrateur: "bg-purple-50 text-purple-700 border-purple-100",
                   Commercial: "bg-blue-50 text-blue-700 border-blue-100",
@@ -94,8 +165,18 @@ export default function UsersPage() {
                     {/* Identité */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#6d5ef0] to-[#8b5cf6] text-white flex items-center justify-center font-bold shadow-sm">
-                          {u.name.slice(0, 2).toUpperCase()}
+                        <div className="w-9 h-9 rounded-full overflow-hidden shadow-sm flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-[#6d5ef0] to-[#8b5cf6] text-white">
+                          {u.avatarUrl ? (
+                            <img
+                              src={u.avatarUrl}
+                              alt={`Avatar ${u.name}`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span className="font-bold">
+                              {u.name ? u.name.slice(0, 2).toUpperCase() : "??"}
+                            </span>
+                          )}
                         </div>
                         <div>
                           <div className="font-bold text-gray-900 group-hover:text-[#6d5ef0] transition-colors">
@@ -120,11 +201,22 @@ export default function UsersPage() {
                       </div>
                     </td>
 
-                    {/* Rôle */}
+                    {/* Rôle avec sélecteur éditable à la volée */}
                     <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold border shadow-sm ${roleColors[u.role] || roleColors.Viewer}`}>
-                        {u.role}
-                      </span>
+                      <div className="relative inline-block">
+                        <select
+                          value={u.role}
+                          disabled={actionLoadingId === u._id}
+                          onChange={(e) => handleRoleChange(u._id, e.target.value as User["role"])}
+                          className={`px-2 py-1 rounded-lg text-xs font-semibold border shadow-sm cursor-pointer outline-none bg-transparent transition-all ${
+                            roleColors[u.role] || roleColors.Viewer
+                          } hover:brightness-95 disabled:opacity-50`}
+                        >
+                          <option value="Viewer">Viewer</option>
+                          <option value="Commercial">Commercial</option>
+                          <option value="Administrateur">Administrateur</option>
+                        </select>
+                      </div>
                     </td>
 
                     {/* Statut */}
@@ -146,7 +238,28 @@ export default function UsersPage() {
                     <td className="px-6 py-4 text-gray-500 text-xs font-medium">
                       <div className="flex items-center gap-1.5">
                         <Calendar size={13} className="text-gray-400" />
-                        <span>{u.lastLogin ? new Date(u.lastLogin).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" }) : "Jamais"}</span>
+                        <span>
+                          {u.lastLogin
+                            ? new Date(u.lastLogin).toLocaleString("fr-FR", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })
+                            : "Jamais"}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Boutons d'actions */}
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2 opacity-70 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleDeleteUser(u._id, u.name)}
+                          disabled={actionLoadingId === u._id}
+                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                          title="Supprimer définitivement"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </td>
                   </tr>

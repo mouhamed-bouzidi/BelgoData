@@ -11,6 +11,8 @@ const prospectsRoutes = require("./routes/prospects");
 const reportsRoutes = require("./routes/reports");
 const authRoutes = require("./routes/auth");
 const settingsRoutes = require("./routes/settings");
+const userManagementRoutes = require("./routes/userManagement");
+const profileRoutes = require("./routes/profile");
 
 const app = express();
 
@@ -27,6 +29,8 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/prospects", prospectsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
+app.use("/api/auth/users", userManagementRoutes);
+app.use('/api/profile', profileRoutes);
 
 const PORT = process.env.PORT_BACKEND || 5000;
 

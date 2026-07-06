@@ -8,6 +8,8 @@ interface User {
   name: string;
   email: string;
   role: string;
+  phone?: string;     
+  avatarUrl?: string;
 }
 
 interface AuthContextType {
@@ -16,11 +18,13 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (name: string, email: string, phone: string, password: string) => Promise<void>;
   logout: () => void;
+  updateUser: (data: Partial<User>) => void; 
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
 
 function setAuthCookie(tokenValue: string | null) {
   if (typeof document === "undefined") return;
@@ -90,9 +94,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("belgodata_user");
     delete axios.defaults.headers.common["Authorization"];
   }
+  function updateUser(updatedUser: Partial<User>) {
+  const newUser = { ...user, ...updatedUser } as User;
+  setUser(newUser);
+  localStorage.setItem("belgodata_user", JSON.stringify(newUser));
+}
 
   return (
-    <AuthContext.Provider value={{ user, token, login, signup, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, signup, logout, loading, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

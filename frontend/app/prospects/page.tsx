@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { Building2, Mail, Globe, Star, Target } from "lucide-react";
+import { Building2, Mail, Globe, Star, Target, Lock } from "lucide-react";
 import { CategoryBadge, CategoryIconCircle } from "@/components/utils/categoryIcons";
+import { useAuth } from "@/context/AuthContext";
 
 type ProspectAddress = {
   city?: string;
@@ -27,18 +28,25 @@ type Prospect = {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function ProspectsPage() {
+  const { user, token } = useAuth(); 
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
 
-  // 1. États pour tous les filtres de la maquette
+  // Filtres de recherche
   const [searchGlobal, setSearchGlobal] = useState("");
   const [source, setSource] = useState("Toutes");
   const [sector, setSector] = useState("Tous les secteurs");
   const [city, setCity] = useState("Toutes");
   const [emailFilter, setEmailFilter] = useState("Toutes");
   const [minScore, setMinScore] = useState("");
+
+  // Sécurité d'hydratation
+  const [mounted, setMounted] = useState(false);
+
+  // Droits de modification basés sur le rôle
+  const canModify = user?.role === "Administrateur" || user?.role === "Commercial";
 
   // Ajout nouveau prospect manuel
   const [showAddModal, setShowAddModal] = useState(false);
@@ -53,7 +61,7 @@ export default function ProspectsPage() {
     website: "",
   });
 
-  // États actifs pour l'API
+  // États actifs transmis à l'API
   const [activeFilters, setActiveFilters] = useState({
     search: "",
     source: "Toutes",
@@ -78,6 +86,12 @@ export default function ProspectsPage() {
     },
   });
 
+  // Configuration des headers d'authentification Bearer JWT
+  const getAuthConfig = useCallback(() => {
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
+  }, [token]);
+
   const fetchData = useCallback(async () => {
     try {
       let url = `${API_URL}/api/prospects?page=${page}&limit=${limit}`;
@@ -89,9 +103,11 @@ export default function ProspectsPage() {
       if (activeFilters.email !== "Toutes") url += `&email=${encodeURIComponent(activeFilters.email)}`;
       if (activeFilters.score) url += `&score_min=${activeFilters.score}`;
 
+      const config = getAuthConfig();
+
       const [prospectsRes, statsRes] = await Promise.all([
-        axios.get(url),
-        axios.get(`${API_URL}/api/prospects/stats`),
+        axios.get(url, config),
+        axios.get(`${API_URL}/api/prospects/stats`, config),
       ]);
 
       setProspects(prospectsRes.data.results || []);
@@ -102,31 +118,32 @@ export default function ProspectsPage() {
         websitesCount: 0,
         avgScore: 0,
         hotLeads: 0,
-        trends: {
-          total: 0,
-          emails: 0,
-          websites: 0,
-          avgScore: 0,
-          hotLeads: 0,
-        },
+        trends: { total: 0, emails: 0, websites: 0, avgScore: 0, hotLeads: 0 },
       });
     } catch (error) {
-      console.error("Erreur lors de la récupération des prospects", error);
+      console.error("Erreur lors de la récupération des prospects :", error);
     }
-  }, [page, limit, activeFilters]);
+  }, [page, limit, activeFilters, getAuthConfig]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (mounted) {
+      fetchData();
+    }
+  }, [fetchData, mounted]);
 
   async function handleDelete(id: string, name: string) {
+    if (!canModify) return;
     if (!confirm(`Supprimer "${name}" de la base de prospects ?`)) return;
 
     try {
-      await axios.delete(`${API_URL}/api/prospects/${id}`);
+      await axios.delete(`${API_URL}/api/prospects/${id}`, getAuthConfig());
       await fetchData();
     } catch (error) {
-      console.error("Erreur lors de la suppression:", error);
+      console.error("Erreur lors de la suppression :", error);
       alert("Erreur lors de la suppression du prospect.");
     }
   }
@@ -159,6 +176,8 @@ export default function ProspectsPage() {
 
   async function handleAddProspect(e: React.FormEvent) {
     e.preventDefault();
+    if (!canModify) return;
+
     try {
       await axios.post(`${API_URL}/api/prospects`, {
         name: newProspect.name,
@@ -171,12 +190,13 @@ export default function ProspectsPage() {
         phone: newProspect.phone || null,
         email: newProspect.email || null,
         website: newProspect.website || null,
-      });
+      }, getAuthConfig());
+      
       setShowAddModal(false);
       setNewProspect({ name: "", category: "Autre", street: "", city: "", postcode: "", phone: "", email: "", website: "" });
       await fetchData();
     } catch (error) {
-      console.error("Erreur ajout prospect:", error);
+      console.error("Erreur ajout prospect :", error);
       alert("Erreur lors de l'ajout du prospect.");
     }
   }
@@ -188,15 +208,16 @@ export default function ProspectsPage() {
   }
 
   async function handleBulkDelete() {
-    if (selectedIds.length === 0) return;
+    if (!canModify || selectedIds.length === 0) return;
     if (!confirm(`Supprimer ${selectedIds.length} prospect(s) sélectionné(s) ?`)) return;
 
     try {
-      await Promise.all(selectedIds.map((id) => axios.delete(`${API_URL}/api/prospects/${id}`)));
+      const config = getAuthConfig();
+      await Promise.all(selectedIds.map((id) => axios.delete(`${API_URL}/api/prospects/${id}`, config)));
       await fetchData();
       setSelectedIds([]);
     } catch (error) {
-      console.error("Erreur suppression en masse:", error);
+      console.error("Erreur suppression en masse :", error);
     }
   }
 
@@ -221,17 +242,25 @@ export default function ProspectsPage() {
 
   return (
     <div className="p-8 bg-[#f8fafc] min-h-screen text-[#1e293b]">
-      {/* HEADER SECTION */}
+      {/* HEADER SECTION - Protégée contre les conflits d'hydratation SSR */}
       <div className="flex justify-between items-center mb-1">
         <h1 className="text-2xl font-bold tracking-tight text-[#0f172a]">Prospects</h1>
         <div className="flex gap-3">
-          <button 
-            onClick={() => setShowAddModal(true)}
-            className="bg-[#5046e5] hover:bg-[#4338ca] text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition flex items-center gap-2"
-          >
-            <span>+</span> Ajouter un prospect
-          </button>
-          
+          {mounted && (
+            canModify ? (
+              <button 
+                onClick={() => setShowAddModal(true)}
+                className="bg-[#5046e5] hover:bg-[#4338ca] text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm transition flex items-center gap-2"
+              >
+                <span>+</span> Ajouter un prospect
+              </button>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm">
+                <Lock size={14} className="text-amber-600" />
+                <span>Consultation seule</span>
+              </div>
+            )
+          )}
         </div>
       </div>
       <p className="text-sm text-slate-500 mb-8">Gérez et consultez l&apos;ensemble de vos entreprises prospects</p>
@@ -397,8 +426,8 @@ export default function ProspectsPage() {
         </div>
       </form>
 
-      {/* DATA TABLE CONTROL & SELECTION */}
-      {selectedIds.length > 0 && (
+      {/* CONTROLE DES ACTIONS EN MASSE */}
+      {mounted && selectedIds.length > 0 && canModify && (
         <button
           onClick={handleBulkDelete}
           className="text-xs font-semibold bg-red-50 text-red-600 px-3 py-1.5 rounded-xl hover:bg-red-100 transition mb-3 block"
@@ -444,7 +473,7 @@ export default function ProspectsPage() {
                 <th className="p-4">Source</th>
                 <th className="p-4">Score IA</th>
                 <th className="p-4">Ajouté le</th>
-                <th className="p-4 text-center">Actions</th>
+                {mounted && canModify && <th className="p-4 text-center">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -469,18 +498,15 @@ export default function ProspectsPage() {
                       />
                     </td>
                     
-                    {/* Entreprise avec icône ronde */}
                     <td className="p-4 font-bold text-slate-800 flex items-center gap-3">
                       <CategoryIconCircle category={p.category} />
                       {p.name}
                     </td>
 
-                    {/* Secteur */}
                     <td className="p-4">
                       <CategoryBadge category={p.category} />
                     </td>
 
-                    {/* Localisation */}
                     <td className="p-4">
                       <div className="font-semibold text-slate-700">
                         {p.address?.city || "Bruxelles"} ({p.address?.postcode || "1000"})
@@ -490,7 +516,6 @@ export default function ProspectsPage() {
                       </div>
                     </td>
 
-                    {/* Contact */}
                     <td className="p-4 font-medium text-slate-500">
                       <div className="flex flex-col gap-0.5">
                         {p.phone && <a href={`tel:${p.phone}`} className="hover:text-indigo-600 flex items-center gap-1">📞 {p.phone}</a>}
@@ -512,35 +537,33 @@ export default function ProspectsPage() {
                       </div>
                     </td>
 
-                    {/* Source Tag */}
                     <td className="p-4">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${p.source === 'linkedin' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-emerald-50 border-emerald-200 text-emerald-600'}`}>
                         {p.source ? p.source.toUpperCase() : "OSM"}
                       </span>
                     </td>
 
-                    {/* Score IA */}
                     <td className="p-4 font-bold">
                       <span className={`px-2 py-1 rounded-md text-[11px] font-extrabold ${scoreColor}`}>
                         {hasScore ? `${p.score}/100` : "—"}
                       </span>
                     </td>
 
-                    {/* Date d'ajout */}
                     <td className="p-4 text-[11px] font-medium text-slate-400 whitespace-pre-line">
                       {formatDate(p.createdAt)}
                     </td>
 
-                    {/* Action Supprimer */}
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => handleDelete(p._id!, p.name!)}
-                        className="text-slate-400 hover:text-red-600 font-bold px-2 py-1 bg-slate-50 hover:bg-red-50 border border-slate-200/60 rounded-lg transition text-xs"
-                        title="Supprimer ce prospect"
-                      >
-                        🗑️
-                      </button>
-                    </td>
+                    {mounted && canModify && (
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => handleDelete(p._id!, p.name!)}
+                          className="text-slate-400 hover:text-red-600 font-bold px-2 py-1 bg-slate-50 hover:bg-red-50 border border-slate-200/60 rounded-lg transition text-xs"
+                          title="Supprimer ce prospect"
+                        >
+                          🗑️
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -562,7 +585,7 @@ export default function ProspectsPage() {
       </div>
 
       {/* MODAL AJOUT PROSPECT */}
-      {showAddModal && (
+      {showAddModal && mounted && canModify && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { CategoryBadge, CategoryIconCircle } from "@/components/utils/categoryIcons";
-import { Trash2, Eye } from "lucide-react";
+import { Trash2, Eye, Lock } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface Report {
   _id: string;
@@ -17,10 +18,12 @@ interface Report {
   createdAt: string;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function ReportsListPage() {
   const router = useRouter();
+  const { user, token } = useAuth();
+  
   const [reports, setReports] = useState<Report[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -28,14 +31,23 @@ export default function ReportsListPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const limit = 20;
 
-  useEffect(() => {
-    fetchReports();
-  }, [page]);
+  // Restriction stricte : Seuls les Admin et Commerciaux peuvent modifier/supprimer
+  const canModify = user?.role === "Administrateur" || user?.role === "Commercial";
 
-  async function fetchReports() {
+  // Helper pour injecter le token d'authentification
+  const getAuthConfig = useCallback(() => {
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
+  }, [token]);
+
+  const fetchReports = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API_URL}/api/reports`, { params: { page, limit } });
+      const config = {
+        ...getAuthConfig(),
+        params: { page, limit }
+      };
+      const res = await axios.get(`${API_URL}/api/reports`, config);
       setReports(res.data.results || []);
       setTotal(res.data.total || 0);
     } catch (error) {
@@ -43,10 +55,11 @@ export default function ReportsListPage() {
     } finally {
       setLoading(false);
     }
-  }
-   useEffect(() => {
+  }, [page, limit, getAuthConfig]);
+
+  useEffect(() => {
     fetchReports();
-  }, [page]);
+  }, [fetchReports]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) =>
@@ -55,26 +68,33 @@ export default function ReportsListPage() {
   }
 
   async function handleDelete(id: string, name: string) {
+    if (!canModify) return;
     if (!confirm(`Supprimer le bilan de "${name}" ?`)) return;
+    
     try {
-      await axios.delete(`${API_URL}/api/reports/${id}`);
+      await axios.delete(`${API_URL}/api/reports/${id}`, getAuthConfig());
       setReports((prev) => prev.filter((r) => r._id !== id));
       setTotal((prev) => prev - 1);
+      setSelectedIds((prev) => prev.filter((i) => i !== id));
     } catch (error) {
       console.error("Erreur suppression:", error);
+      alert("Erreur lors de la suppression du bilan.");
     }
   }
 
   async function handleBulkDelete() {
-    if (selectedIds.length === 0) return;
+    if (!canModify || selectedIds.length === 0) return;
     if (!confirm(`Supprimer ${selectedIds.length} bilan(s) sélectionné(s) ?`)) return;
+    
     try {
-      await Promise.all(selectedIds.map((id) => axios.delete(`${API_URL}/api/reports/${id}`)));
+      const config = getAuthConfig();
+      await Promise.all(selectedIds.map((id) => axios.delete(`${API_URL}/api/reports/${id}`, config)));
       setReports((prev) => prev.filter((r) => !selectedIds.includes(r._id)));
       setTotal((prev) => prev - selectedIds.length);
       setSelectedIds([]);
     } catch (error) {
       console.error("Erreur suppression en masse:", error);
+      alert("Erreur lors de la suppression groupée.");
     }
   }
 
@@ -89,7 +109,9 @@ export default function ReportsListPage() {
           <h1 className="text-2xl font-bold text-gray-900">Rapports & Bilans</h1>
           <p className="text-sm text-gray-500">Historique de tous les bilans de prospection générés par l&apos;IA</p>
         </div>
-        {selectedIds.length > 0 && (
+        
+        {/* Le bouton de suppression groupée s'affiche uniquement si l'utilisateur a les droits */}
+        {selectedIds.length > 0 && canModify && (
           <button
             onClick={handleBulkDelete}
             className="flex items-center gap-2 text-sm font-semibold bg-red-50 text-red-600 px-4 py-2.5 rounded-xl hover:bg-red-100 transition"
@@ -179,13 +201,21 @@ export default function ReportsListPage() {
                       >
                         <Eye size={15} />
                       </button>
-                      <button
-                        onClick={() => handleDelete(r._id, r.name)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
-                        title="Supprimer"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      
+                      {/* Affichage conditionnel de l'action de suppression */}
+                      {canModify ? (
+                        <button
+                          onClick={() => handleDelete(r._id, r.name)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                          title="Supprimer"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      ) : (
+                        <span className="p-1.5 text-slate-300 cursor-not-allowed" title="Action non autorisée">
+                          <Lock size={14} />
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>

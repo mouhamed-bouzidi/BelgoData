@@ -45,7 +45,7 @@ interface ProvinceStat {
   percentage: number;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const COLORS = [
   "#6d5ef0", // violet principal
   "#3b82f6", // bleu

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 import { 
   Bot, 
   Sparkles, 
@@ -18,7 +19,8 @@ import {
   XCircle, 
   FileText, 
   ChevronRight, 
-  Info 
+  Info,
+  Lock 
 } from "lucide-react";
 
 interface Message {
@@ -61,18 +63,19 @@ export default function Home() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
 
+  const { user } = useAuth();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const isViewer = user?.role === "Viewer";
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const [userName] = useState("Mohamed Ali");
+  const userName = user?.name || "Utilisateur";
   const [greeting, setGreeting] = useState("Bonjour");
   
-  // 🎯 États ajustés pour contrer le comportement SSR de Next.js
   const [showSplash, setShowSplash] = useState(false); 
   const [fadeSplash, setFadeSplash] = useState(false);
 
@@ -89,7 +92,7 @@ export default function Home() {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
               setMessages(parsed);
-              setShowSplash(false); // Historique trouvé -> Pas de splash screen
+              setShowSplash(false); 
               setMounted(true);
               return;
             }
@@ -98,7 +101,6 @@ export default function Home() {
           }
         }
 
-        // Si aucun historique n'est trouvé, c'est le premier lancement !
         setShowSplash(true);
         setMounted(true);
       }
@@ -140,59 +142,58 @@ export default function Home() {
   }, [messages, mounted]);
 
   async function sendMessage(text: string) {
-  if (!text.trim()) return;
+    if (!text.trim() || isViewer) return; // Sécurité stricte contre l'exécution pour le Viewer
 
-  const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
-  const updatedMessages = [...messages, userMessage];
-  setMessages(updatedMessages);
-  setInput("");
-  setLoading(true);
-  setCurrentStepIndex(0); // 🎯 Réinitialise à la première étape
+    const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setInput("");
+    setLoading(true);
+    setCurrentStepIndex(0); 
 
-  // 🎯 Intervalle pour simuler la progression des étapes de recherche
-  const stepInterval = setInterval(() => {
-    setCurrentStepIndex((prevIndex) => {
-      if (prevIndex < LOADING_STEPS.length - 1) {
-        return prevIndex + 1;
-      }
-      return prevIndex; // Reste sur la dernière étape si le backend prend plus de temps
-    });
-  }, 3500); // Change d'étape toutes les 3.5 secondes
+    const stepInterval = setInterval(() => {
+      setCurrentStepIndex((prevIndex) => {
+        if (prevIndex < LOADING_STEPS.length - 1) {
+          return prevIndex + 1;
+        }
+        return prevIndex;
+      });
+    }, 3500);
 
-  try {
-    const res = await axios.post(`${AI_URL}/agent/chat`, {
-      message: text,
-      history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
-    });
+    try {
+      const res = await axios.post(`${AI_URL}/agent/chat`, {
+        message: text,
+        history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+      });
 
-    const agentMessage: Message = {
-      role: "agent",
-      content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
-      timestamp: nowTime(),
-      suggestedActions: res.data?.suggested_actions,
-      report: res.data?.report,
-    };
-
-    setMessages((prev) => [...prev, agentMessage]);
-
-    if (res.data?.report) {
-      setActiveReport(res.data.report);
-    }
-  } catch (error) {
-    console.error("Erreur agent:", error);
-    setMessages((prev) => [
-      ...prev,
-      {
+      const agentMessage: Message = {
         role: "agent",
-        content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
+        content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
         timestamp: nowTime(),
-      },
-    ]);
-  } finally {
-    clearInterval(stepInterval); // 🎯 Pense à bien nettoyer l'intervalle
-    setLoading(false);
+        suggestedActions: res.data?.suggested_actions,
+        report: res.data?.report,
+      };
+
+      setMessages((prev) => [...prev, agentMessage]);
+
+      if (res.data?.report) {
+        setActiveReport(res.data.report);
+      }
+    } catch (error) {
+      console.error("Erreur agent:", error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
+          timestamp: nowTime(),
+        },
+      ]);
+    } finally {
+      clearInterval(stepInterval); 
+      setLoading(false);
+    }
   }
-}
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -205,12 +206,10 @@ export default function Home() {
     }
     setMessages([]);
     setActiveReport(null);
-    // Optionnel : Réaffiche le splash screen si tu réinitialises manuellement
     setShowSplash(true);
     setFadeSplash(false);
   }
 
-  // Sécurité pour éviter les bugs visuels d'hydratation Next.js
   if (!mounted) {
     return <div className="h-screen bg-slate-50" />;
   }
@@ -228,13 +227,13 @@ export default function Home() {
             fadeSplash ? "opacity-0 scale-105 pointer-events-none" : "opacity-100"
           }`}
         >
-          <div className="max-w-3xl space-y-6">
+          <div className="max-w-5xl space-y-6">
             <div className="flex justify-center mb-4">
               <Image
                 src="/logo1.png"
                 alt="logo BelgoData"
                 width={120}
-                height={24}
+                height={54}
                 priority
               />
             </div>
@@ -244,7 +243,7 @@ export default function Home() {
               </span>
             </h1>
             <p className="text-lg md:text-xl text-slate-500 font-medium max-w-xl mx-auto">
-              Comment <span className="text-indigo-600 font-bold">BelgoData</span> peut-il vous aider aujourdhui ?
+              Comment <span className="text-indigo-600 font-bold">BelgoData</span> peut-il vous aider aujourd&apos;hui ?
             </p>
           </div>
         </div>
@@ -338,59 +337,58 @@ export default function Home() {
             )}
 
             {loading && (
-  <div className="flex gap-4 justify-start animate-fade-in">
-    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
-      <Bot size={16} />
-    </div>
-    <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-800 max-w-[78%] space-y-3">
-      
-      {/* Animation principale de chargement */}
-      <div className="flex items-center gap-3">
-        <span className="flex h-2 w-2 relative">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
-        </span>
-        <span className="font-semibold bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent">
-          L&apos;Agent BelgoData s&apos;active...
-        </span>
-      </div>
+              <div className="flex gap-4 justify-start animate-fade-in">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+                  <Bot size={16} />
+                </div>
+                <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-800 max-w-[78%] space-y-3">
+                  
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+                    </span>
+                    <span className="font-semibold bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent">
+                      L&apos;Agent BelgoData s&apos;active...
+                    </span>
+                  </div>
 
-      {/* Liste des étapes dynamiques */}
-      <div className="space-y-2 pt-1 border-t border-slate-50">
-        {LOADING_STEPS.map((step, idx) => {
-          const isDone = idx < currentStepIndex;
-          const isActive = idx === currentStepIndex;
+                  <div className="space-y-2 pt-1 border-t border-slate-50">
+                    {LOADING_STEPS.map((step, idx) => {
+                      const isDone = idx < currentStepIndex;
+                      const isActive = idx === currentStepIndex;
 
-          return (
-            <div 
-              key={idx} 
-              className={`flex items-center gap-2.5 text-xs transition-all duration-300 ${
-                isDone ? "text-emerald-600 font-medium" : isActive ? "text-indigo-600 font-bold animate-pulse" : "text-slate-400"
-              }`}
-            >
-              <div className={`w-4 h-4 rounded-full flex items-center justify-center border text-[9px] ${
-                isDone ? "bg-emerald-50 border-emerald-200" : isActive ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"
-              }`}>
-                {isDone ? "✓" : idx + 1}
+                      return (
+                        <div 
+                          key={idx} 
+                          className={`flex items-center gap-2.5 text-xs transition-all duration-300 ${
+                            isDone ? "text-emerald-600 font-medium" : isActive ? "text-indigo-600 font-bold animate-pulse" : "text-slate-400"
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded-full flex items-center justify-center border text-[9px] ${
+                            isDone ? "bg-emerald-50 border-emerald-200" : isActive ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"
+                          }`}>
+                            {isDone ? "✓" : idx + 1}
+                          </div>
+                          <span className={isActive ? "translate-x-1 transition-transform" : ""}>
+                            {step}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                </div>
               </div>
-              <span className={isActive ? "translate-x-1 transition-transform" : ""}>
-                {step}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-    </div>
-  </div>
-)}
+            )}
 
             <div ref={scrollRef} />
           </div>
 
-          {/* ZONE ACTIONS & FORMULAIRE */}
+          {/* ZONE ACTIONS & FORMULAIRE CONDUITE PAR LES RÔLES */}
           <div className="border-t border-slate-100 bg-white p-4 space-y-4 shrink-0">
-            {currentSuggestions && currentSuggestions.length > 0 && !loading && (
+            {/* Suggestions masquées pour le Viewer pour l'empêcher d'exécuter des requêtes IA */}
+            {currentSuggestions && currentSuggestions.length > 0 && !loading && !isViewer && (
               <div className="flex flex-wrap gap-2 px-1">
                 {currentSuggestions.map((action) => (
                   <button
@@ -405,23 +403,31 @@ export default function Home() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex gap-2 items-center">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
-                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                disabled={loading || !input.trim()}
-                className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
-              >
-                <Send size={16} />
-              </button>
-            </form>
+            {/* Condition de rendu selon les privilèges de l'utilisateur */}
+            {isViewer ? (
+              <div className="flex items-center gap-2.5 justify-center p-3.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl shadow-sm">
+                <Lock size={15} className="text-amber-600 shrink-0" />
+                <span>Mode Consultation activé : Le rôle <b>Viewer</b> n&apos;est pas autorisé à interagir avec l&apos;Agent IA BelgoData.</span>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
+                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
+                >
+                  <Send size={16} />
+                </button>
+              </form>
+            )}
           </div>
         </div>
 
@@ -441,7 +447,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Zone de contenu défilante améliorée */}
             <div className="flex-1 overflow-y-auto scroll-smooth overscroll-contain p-6 space-y-6 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
               
               <div className="flex items-start justify-between bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40">

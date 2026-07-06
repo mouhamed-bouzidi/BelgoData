@@ -1,23 +1,41 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import axios from "axios";
-import { FileSpreadsheet, FileText, Download, Building2, FileBarChart } from "lucide-react";
+import { FileSpreadsheet, FileText, Download, Building2, FileBarChart, ShieldAlert, Lock } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function ExportsPage() {
+  const router = useRouter();
+  const { user, token, loading } = useAuth();
+  
   const [stats, setStats] = useState({ totalProspects: 0, totalReports: 0 });
   const [category, setCategory] = useState("Tous les secteurs");
   const [postalCode, setPostalCode] = useState("Toutes");
 
+  // Restriction d'accès stricte : Seuls les Admin et Commerciaux passent
+  const canAccess = user?.role === "Administrateur" || user?.role === "Commercial";
+
+  // Configuration du token d'authentification
+  const getAuthConfig = useCallback(() => {
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
+  }, [token]);
+
   useEffect(() => {
+    // On ne lance la requête que si l'utilisateur est connecté et autorisé
+    if (loading || !canAccess) return;
+
     async function fetchStats() {
       try {
+        const config = getAuthConfig();
         const [prospectsRes, reportsRes] = await Promise.all([
-          axios.get(`${API_URL}/api/prospects/stats`),
-          axios.get(`${API_URL}/api/reports`, { params: { limit: 1 } }),
+          axios.get(`${API_URL}/api/prospects/stats`, config),
+          axios.get(`${API_URL}/api/reports`, { ...config, params: { limit: 1 } }),
         ]);
         setStats({
           totalProspects: prospectsRes.data.total,
@@ -28,23 +46,65 @@ export default function ExportsPage() {
       }
     }
     fetchStats();
-  }, []);
+  }, [canAccess, loading, getAuthConfig]);
+
+  // Écran d'attente pendant la vérification du contexte Auth
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
+        <p className="text-sm font-medium text-slate-500">Chargement...</p>
+      </div>
+    );
+  }
+
+  // Refus d'accès définitif pour les profils non autorisés (ex: Viewer)
+  if (!canAccess) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-4 text-center">
+        <div className="p-4 bg-red-50 rounded-2xl text-red-600 mb-4 shadow-sm border border-red-100">
+          <ShieldAlert size={40} />
+        </div>
+        <h1 className="text-xl font-bold text-slate-950 mb-2">Accès restreint</h1>
+        <p className="text-sm text-slate-500 max-w-sm mb-6">
+          Votre profil ne dispose pas des autorisations nécessaires pour accéder à l&apos;exportation des données de BelgoData.
+        </p>
+        <button
+          onClick={() => router.push("/prospects")}
+          className="px-4 py-2 bg-[#5046e5] hover:bg-[#4338ca] text-white rounded-xl text-sm font-semibold shadow-sm transition"
+        >
+          Retour aux prospects
+        </button>
+      </div>
+    );
+  }
 
   function buildProspectsExportUrl(format: "csv" | "excel") {
     const params = new URLSearchParams();
     if (category !== "Tous les secteurs") params.append("category", category);
     if (postalCode !== "Toutes") params.append("postal_code", postalCode);
+    
+    // Ajout du token dans l'URL d'export si ton backend le supporte en query param
+    // (Sinon, il faudra utiliser un fetch blob avec les headers classiques)
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : "");
+    if (activeToken) params.append("token", activeToken);
+
     return `${API_URL}/api/prospects/export/${format}?${params.toString()}`;
   }
 
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Exports</h1>
-        <p className="text-sm text-gray-500">
-          Téléchargez vos données de prospection dans le format de votre choix
-        </p>
+      <div className="mb-6 flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Exports</h1>
+          <p className="text-sm text-gray-500">
+            Téléchargez vos données de prospection dans le format de votre choix
+          </p>
+        </div>
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm">
+          <Lock size={13} className="text-emerald-600" />
+          <span>Accès autorisé ({user?.role})</span>
+        </div>
       </div>
 
       {/* KPIs rapides */}
@@ -150,9 +210,7 @@ export default function ExportsPage() {
 
           <div className="bg-content-bg rounded-lg p-4 mb-5">
             <p className="text-sm text-gray-600">
-              Rendez-vous sur <strong>Rapports & Bilans</strong>  
-              pour consulter et exporter un bilan
-              de prospection généré par l&apos;IA.
+              Rendez-vous sur Rapports & Bilans  pour consulter et exporter un bilan de prospection généré par l&apos;IA.
             </p>
           </div>
 
