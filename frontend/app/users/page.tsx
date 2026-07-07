@@ -71,7 +71,7 @@ export default function UsersPage() {
       );
       // Mise à jour de l'état local
       setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+        prev.map((u) => (u._id === userId ? { ...u, role: newRole } : u))
       );
     } catch (err: unknown) {
       console.error("Erreur changement rôle :", err);
@@ -100,7 +100,7 @@ export default function UsersPage() {
     try {
       await axios.delete(`${API_URL}/api/auth/users/${userId}`, getAuthConfig());
       // Retrait de la liste locale
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setUsers((prev) => prev.filter((u) => u._id !== userId));
     } catch (err: unknown) {
       console.error("Erreur suppression :", err);
       const errorMessage =

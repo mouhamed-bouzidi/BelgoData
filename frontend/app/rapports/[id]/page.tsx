@@ -39,6 +39,7 @@ interface Report {
   faiblesses: string[];
   argumentaire: string;
   web_sources?: WebSource[];
+  requestedBy?: { userName?: string };
   createdAt: string;
 }
 
@@ -195,8 +196,8 @@ export default function ReportPage() {
       {/* Indicateurs rapides */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white border border-border-color rounded-xl p-4 shadow-sm">
-          <p className="text-xs text-gray-400">Présence digitale</p>
-          <p className="font-semibold text-gray-900 mt-1">{report.presence_digitale}</p>
+          <p className="text-xs text-gray-400">Demandé par</p>
+          <p className="font-semibold text-gray-900 mt-1">{report.requestedBy?.userName || "Système"}</p>
         </div>
         <div className="bg-white border border-border-color rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-400">Email trouvé</p>

@@ -154,11 +154,15 @@ def scrape_node(state: AgentState) -> AgentState:
         return state
 
     raw_results = query_overpass(bbox, category)
+    total_osm_elements = len(raw_results.get("elements", []))
     prospects = normalize_osm_results(raw_results, postal_code)
 
     prospects_enrichis = []
+    deep_scrape_count = 0
+    max_deep_scrapes = 5
+
     for p in prospects:
-        if p.get("website") and (not p.get("phone") or not p.get("email")):
+        if p.get("website") and (not p.get("phone") or not p.get("email")) and deep_scrape_count < max_deep_scrapes:
             try:
                 logger.info(f"Enrichissement Deep Scraping sur : {p['name']} ({p['website']})")
                 infos_manquantes = deep_scraping_prospect(p["website"])
@@ -170,18 +174,21 @@ def scrape_node(state: AgentState) -> AgentState:
                         p["email"] = infos_manquantes["email"]
             except Exception as e:
                 logger.warning(f"Le Deep Scraping a échoué pour {p['name']} mais on continue : {e}")
-                p["phone"] = p.get("phone", None)
-                p["email"] = p.get("email", None)
-                
+            deep_scrape_count += 1
+
         prospects_enrichis.append(p)
 
-    summary = insert_prospects(prospects_enrichis)
+    summary = insert_prospects(
+        prospects_enrichis,
+        user_id=state.get("user_id"),
+        user_name=state.get("user_name"),
+    )
 
     state["scraped_count"] = summary["inserted"]
     state["prospects_sample"] = prospects_enrichis[:5]
     state["response"] = (
         f"✅ Prospection terminée avec succès pour '{postal_code}' !\n"
-        f"J'ai localisé {len(prospects_enrichis)} établissement(s) dans la catégorie '{category}'.\n"
+        f"J'ai trouvé {total_osm_elements} éléments OSM dans la catégorie '{category}', dont {len(prospects_enrichis)} prospects exploitables.\n"
         f"• {summary['inserted']} nouveaux profils ajoutés à votre base de prospects.\n"
         f"• {summary['skipped']} profils déjà enregistrés mis à jour."
     )
@@ -309,6 +316,10 @@ def generate_report_node(state: AgentState) -> AgentState:
         "faiblesses": analysis.get("faiblesses", []),
         "argumentaire": analysis.get("argumentaire", ""),
         "web_sources": web_results,
+        "requestedBy": {
+            "userId": state.get("user_id"),
+            "userName": state.get("user_name"),
+        },
         "createdAt": datetime.now(timezone.utc).isoformat(),
     }
 

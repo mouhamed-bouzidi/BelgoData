@@ -28,6 +28,10 @@ const ProspectSchema = new mongoose.Schema(
 
     rating: { type: Number, default: null },
     score: { type: Number, default: null }, // calculé plus tard par le RAG
+    createdBy: {
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      userName: { type: String, default: null },
+    },
 
     source: { type: String, enum: ["osm", "linkedin", "manuel"], required: true },
 

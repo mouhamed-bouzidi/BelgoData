@@ -287,17 +287,11 @@ router.get("/export/excel", async (req, res) => {
 // GET /api/prospects/:id
 router.get("/:id", async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const filter = buildProspectFilter(req.query);
-
-    const skip = (Number(page) - 1) * Number(limit);
-
-    const [prospects, total] = await Promise.all([
-      Prospect.find(filter).skip(skip).limit(Number(limit)).sort({ createdAt: -1 }),
-      Prospect.countDocuments(filter),
-    ]);
-
-    res.json({ total, page: Number(page), limit: Number(limit), results: prospects });
+    const prospect = await Prospect.findById(req.params.id);
+    if (!prospect) {
+      return res.status(404).json({ error: "Prospect non trouvé" });
+    }
+    res.json(prospect);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -341,6 +335,10 @@ router.post("/", authMiddleware, authorizeRoles("Administrateur", "Commercial"),
       website: website || null,
       source: "manuel",
       score: null,
+      createdBy: {
+        userId: req.user?.id || null,
+        userName: req.user?.name || null,
+      },
     };
 
     const newProspect = new Prospect(prospectData);

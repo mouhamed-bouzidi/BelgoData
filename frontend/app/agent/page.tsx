@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { redirect } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
@@ -17,6 +17,7 @@ import {
   Mail, 
   CheckCircle2, 
   XCircle, 
+  Trash2,
   FileText, 
   ChevronRight, 
   Info 
@@ -48,7 +49,15 @@ interface Report {
   argumentaire: string;
 }
 
-const AI_URL = process.env.NEXT_PUBLIC_AI_URL;
+interface ConversationSummary {
+  _id: string;
+  title: string;
+  updatedAt: string;
+  messages: Message[];
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:5001";
 
 const defaultMessageContent = 
   "Je suis votre assistant de prospection intelligent spécialisé sur le marché belge. Voici ce que nous pouvons faire ensemble :\n\n" +
@@ -67,21 +76,101 @@ export default function AgentPage() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
 
-  const { user } = useAuth();
+  const { user, token } = useAuth();
+  const canChat = user ? user.role !== "Viewer" : false;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const userName = user?.name || "Utilisateur";
-  const [greeting, setGreeting] = useState("Bonjour");
+  const [greeting] = useState(() => {
+    const hour = new Date().getHours();
+    return hour >= 18 ? "Bonsoir" : "Bonjour";
+  });
+
+  const getAuthConfig = useCallback(() => {
+    return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  }, [token]);
+
+  const loadConversations = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}/api/conversations`, getAuthConfig());
+      const data: ConversationSummary[] = res.data || [];
+      setConversations(data);
+      if (data.length > 0) {
+        const conv = data[0];
+        setConversationId(conv._id);
+        if (conv.messages && conv.messages.length > 0) {
+          setMessages(conv.messages);
+          localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages));
+        }
+      } else {
+        const title = `Conversation IA - ${new Date().toLocaleDateString("fr-FR")}`;
+        const createRes = await axios.post(
+          `${API_URL}/api/conversations`,
+          { title, messages: [] },
+          getAuthConfig()
+        );
+        setConversationId(createRes.data._id);
+        setConversations([createRes.data]);
+      }
+    } catch (error) {
+      console.error("Erreur chargement conversations :", error);
+    }
+  }, [token, getAuthConfig]);
+
+  const saveConversation = async (updatedMessages: Message[]) => {
+    if (!token || !conversationId) return;
+    try {
+      await axios.put(
+        `${API_URL}/api/conversations/${conversationId}`,
+        { messages: updatedMessages },
+        getAuthConfig()
+      );
+    } catch (error) {
+      console.error("Erreur sauvegarde conversation :", error);
+    }
+  };
+
+  const loadConversation = (conv: ConversationSummary) => {
+    setConversationId(conv._id);
+    setMessages(conv.messages || []);
+    setShowHistory(false);
+    localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages || []));
+  };
+
+  const deleteConversation = async (id: string) => {
+    if (!token) return;
+    if (!confirm("Confirmer la suppression de cette conversation ?")) return;
+    try {
+      await axios.delete(`${API_URL}/api/conversations/${id}`, getAuthConfig());
+      setConversations((prev) => prev.filter((c) => c._id !== id));
+      if (conversationId === id) {
+        localStorage.removeItem("agent_chat_history");
+        setConversationId(null);
+        setMessages([
+          {
+            role: "agent",
+            content: defaultMessageContent,
+            suggestedActions: defaultActions,
+            timestamp: nowTime(),
+          },
+        ]);
+        setActiveReport(null);
+      }
+    } catch (error) {
+      console.error("Erreur suppression conversation:", error);
+    }
+  };
 
   useEffect(() => {
-    const hour = new Date().getHours();
-    setGreeting(hour >= 18 ? "Bonsoir" : "Bonjour");
-
     const loadChatHistory = () => {
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem("agent_chat_history");
@@ -114,6 +203,16 @@ export default function AgentPage() {
   }, []);
 
   useEffect(() => {
+    if (!mounted || !token) return;
+
+    const fetchConversations = async () => {
+      await loadConversations();
+    };
+
+    fetchConversations();
+  }, [mounted, token, loadConversations]);
+
+  useEffect(() => {
     if (mounted && typeof window !== "undefined" && messages.length > 0) {
       localStorage.setItem("agent_chat_history", JSON.stringify(messages));
     }
@@ -126,6 +225,10 @@ export default function AgentPage() {
   }, [messages, mounted]);
 
   async function sendMessage(text: string) {
+    if (!canChat) {
+      alert("Vous n'avez pas l'accès pour discuter avec le chat. Contactez l'administrateur.");
+      return;
+    }
     if (!text.trim()) return;
 
     const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
@@ -138,6 +241,8 @@ export default function AgentPage() {
       const res = await axios.post(`${AI_URL}/agent/chat`, {
         message: text,
         history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+        userId: user?.id,
+        userName: user?.name,
       });
 
       const agentMessage: Message = {
@@ -148,11 +253,14 @@ export default function AgentPage() {
         report: res.data?.report,
       };
 
-      setMessages((prev) => [...prev, agentMessage]);
+      const finalMessages = [...updatedMessages, agentMessage];
+      setMessages(finalMessages);
 
       if (res.data?.report) {
         setActiveReport(res.data.report);
       }
+
+      await saveConversation(finalMessages);
     } catch (error) {
       console.error("Erreur agent:", error);
       setMessages((prev) => [
@@ -168,7 +276,7 @@ export default function AgentPage() {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     sendMessage(input);
   }
@@ -208,18 +316,30 @@ export default function AgentPage() {
             Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
           </p>
         </div>
-        
-        <button
-          onClick={resetConversation}
-          className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
-        >
-          <RefreshCw size={14} />
-          Nouvelle session
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHistory((prev) => !prev)}
+            className="text-xs font-semibold text-indigo-600 border border-indigo-100 bg-white px-3 py-2 rounded-xl shadow-sm hover:bg-indigo-50 transition"
+          >
+            Historique
+          </button>
+          <button
+            onClick={resetConversation}
+            className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+          >
+            <RefreshCw size={14} />
+            Nouvelle session
+          </button>
+        </div>
       </header>
 
       {/* ZONE DE TRAVAIL (2 Colonnes) */}
-      <div className="flex-1 flex overflow-hidden p-4 gap-4">
+      {user?.role === "Viewer" && (
+        <div className="px-8 py-3 bg-rose-50 border-b border-rose-100 text-rose-800 text-sm">
+          Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.
+        </div>
+      )}
+      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
         
         {/* COLONNE CHAT */}
         <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${activeReport ? "w-7/12" : "w-full"}`}>
@@ -294,7 +414,7 @@ export default function AgentPage() {
           <div className="border-t border-slate-100 bg-white p-4 space-y-4 shrink-0">
             
             {/* Puces d'actions suggérées dynamiques */}
-            {currentSuggestions && currentSuggestions.length > 0 && !loading && (
+            {canChat && currentSuggestions && currentSuggestions.length > 0 && !loading && (
               <div className="flex flex-wrap gap-2 px-1">
                 {currentSuggestions.map((action) => (
                   <button
@@ -310,23 +430,29 @@ export default function AgentPage() {
             )}
 
             {/* Input Form */}
-            <form onSubmit={handleSubmit} className="flex gap-2 items-center">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
-                className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                disabled={loading || !input.trim()}
-                className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
-              >
-                <Send size={16} />
-              </button>
-            </form>
+            {canChat ? (
+              <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
+                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  disabled={loading || !input.trim()}
+                  className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
+                >
+                  <Send size={16} />
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
+                <div>Vous n&pos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -472,6 +598,48 @@ export default function AgentPage() {
           </div>
         )}
       </div>
+
+      {showHistory && (
+        <div className="absolute right-6 top-28 z-50 w-80 rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Historique des conversations</p>
+              <p className="text-xs text-slate-500">Chargé pour {userName}</p>
+            </div>
+            <button onClick={() => setShowHistory(false)} className="text-xs text-slate-500 hover:text-slate-900">Fermer</button>
+          </div>
+          <div className="max-h-80 overflow-y-auto px-4 py-3">
+            {conversations.length === 0 ? (
+              <p className="text-sm text-slate-500">Aucune conversation sauvegardée.</p>
+            ) : (
+              <ul className="space-y-2">
+                {conversations.map((conv) => (
+                  <li key={conv._id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => loadConversation(conv)}
+                        className="flex-1 text-left rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <div className="font-semibold">{conv.title}</div>
+                        <div className="text-xs text-slate-400">Mis à jour le {new Date(conv.updatedAt).toLocaleDateString("fr-FR")}</div>
+                      </button>
+
+                      <button
+                        onClick={() => deleteConversation(conv._id)}
+                        title="Supprimer"
+                        className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50/40 hover:bg-rose-100 px-2 py-1 rounded-md border border-rose-100"
+                      >
+                        <Trash2 size={16} strokeWidth={1.8} />
+                        <span>Supprimer</span>
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* FOOTER DISCRET */}
       <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">

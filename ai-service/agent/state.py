@@ -11,6 +11,8 @@ class AgentState(TypedDict):
     postal_code: Optional[str]
     category: Optional[str]
     company_name: Optional[str]
+    user_id: Optional[str]
+    user_name: Optional[str]
     scraped_count: Optional[int]
     prospects_sample: Optional[List[dict]]
     response: Optional[str]

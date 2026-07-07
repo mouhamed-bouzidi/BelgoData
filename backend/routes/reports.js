@@ -3,6 +3,9 @@ const router = express.Router();
 const mongoose = require("mongoose");
 const PDFDocument = require("pdfkit");
 const ExcelJS = require("exceljs");
+const authMiddleware = require("../middleware/auth");
+const authorizeRoles = require("../middleware/roleMiddleware");
+const User = require("../models/users");
 
 
 
@@ -243,3 +246,40 @@ router.get("/by-prospect/:prospectId", async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/reports/fix-requestedBy - admin only
+// Remplit requestedBy.userName pour les rapports existants si missing
+router.post("/fix-requestedBy", authMiddleware, authorizeRoles("Administrateur"), async (req, res) => {
+  try {
+    const db = mongoose.connection.db;
+    const reportsCollection = db.collection("reports");
+
+    const cursor = reportsCollection.find({
+      "requestedBy.userId": { $exists: true },
+      $or: [{ "requestedBy.userName": null }, { "requestedBy.userName": "" }],
+    });
+
+    let updated = 0;
+    while (await cursor.hasNext()) {
+      const rep = await cursor.next();
+      const userId = rep.requestedBy?.userId;
+      if (!userId) continue;
+      // try to resolve user name from Users collection
+      let user = null;
+      try {
+        user = await User.findById(userId).lean();
+      } catch (e) {
+        // no-op
+      }
+      if (user && user.name) {
+        await reportsCollection.updateOne({ _id: rep._id }, { $set: { "requestedBy.userName": user.name } });
+        updated++;
+      }
+    }
+
+    res.json({ updated });
+  } catch (error) {
+    console.error("Erreur migration requestedBy:", error);
+    res.status(500).json({ error: error.message });
+  }
+});

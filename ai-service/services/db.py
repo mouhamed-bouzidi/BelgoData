@@ -2,6 +2,7 @@ from pymongo import MongoClient
 import os
 from bson import ObjectId
 from datetime import datetime
+from typing import Optional
 
 
 _client = None
@@ -32,9 +33,10 @@ def get_db():
     return _db
 
 
-def insert_prospects(prospects: list[dict]) -> dict:
+def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_name: Optional[str] = None) -> dict:
     """
     Insère les prospects, en évitant les doublons via osm_id.
+    Ajoute le champ createdBy quand un utilisateur est fourni.
     Retourne un résumé: {inserted, skipped}.
     """
     if not prospects:
@@ -51,6 +53,13 @@ def insert_prospects(prospects: list[dict]) -> dict:
         if existing:
             skipped += 1
             continue
+
+        if user_id or user_name:
+            p["createdBy"] = {
+                "userId": ObjectId(user_id) if user_id else None,
+                "userName": user_name,
+            }
+
         collection.insert_one(p)
         inserted += 1
 

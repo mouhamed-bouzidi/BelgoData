@@ -13,13 +13,15 @@ const authRoutes = require("./routes/auth");
 const settingsRoutes = require("./routes/settings");
 const userManagementRoutes = require("./routes/userManagement");
 const profileRoutes = require("./routes/profile");
+const conversationsRoutes = require("./routes/conversations");
 
 const app = express();
 
 app.use(cors({
   origin: 'http://localhost:3000', 
   credentials: true
-}));app.use(express.json());
+}));
+app.use(express.json());
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "backend" });
@@ -27,6 +29,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/reports", reportsRoutes);
 app.use("/api/prospects", prospectsRoutes);
+app.use("/api/conversations", conversationsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/auth/users", userManagementRoutes);

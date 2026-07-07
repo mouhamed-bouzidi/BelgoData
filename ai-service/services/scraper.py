@@ -266,9 +266,21 @@ def normalize_osm_element(element: dict, postal_code: str) -> dict | None:
     Retourne None si l'élément n'a pas de nom (inutilisable comme prospect).
     """
     tags = element.get("tags", {})
-    name = tags.get("name")
+    raw_category = (
+        tags.get("amenity")
+        or tags.get("shop")
+        or tags.get("office")
+    )
+
+    name = (
+        tags.get("name")
+        or tags.get("brand")
+        or tags.get("operator")
+        or tags.get("official_name")
+    )
     if not name:
-        return None
+        fallback_label = raw_category.replace("_", " ").capitalize() if raw_category else "Prospect"
+        name = f"{fallback_label} {element.get('id', '')}".strip()
 
     # Pour les "way", la position est dans un sous-objet "center"
     if element["type"] == "way" and "center" in element:

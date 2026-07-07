@@ -37,7 +37,11 @@ def scrape_osm():
         return jsonify({"error": str(e)}), 400
 
     prospects = normalize_osm_results(raw_results, postal_code)
-    summary = insert_prospects(prospects)
+    summary = insert_prospects(
+        prospects,
+        user_id=body.get("userId"),
+        user_name=body.get("userName"),
+    )
 
     return jsonify({
         "postal_code": postal_code,
@@ -62,6 +66,8 @@ def agent_chat():
     body = request.get_json(silent=True) or {}
     user_query = body.get("message")
     history = body.get("history", [])
+    user_id = body.get("userId")
+    user_name = body.get("userName")
 
     if not user_query:
         return jsonify({"error": "Le champ 'message' est requis"}), 400
@@ -73,10 +79,13 @@ def agent_chat():
         "postal_code": None,
         "category": None,
         "company_name": None,
+        "user_id": user_id,
+        "user_name": user_name,
         "scraped_count": None,
         "prospects_sample": None,
         "response": None,
         "suggested_actions": None,
+        "report": None,
     }
 
     result = agent_graph.invoke(initial_state)

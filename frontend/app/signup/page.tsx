@@ -40,8 +40,11 @@ export default function SignupPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-content-bg flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen auth-bg flex items-center justify-center p-4">
+      <div className="auth-blob b1" aria-hidden />
+      <div className="auth-blob b2" aria-hidden />
+      <div className="auth-blob b3" aria-hidden />
+      <div className="w-full max-w-md relative z-10">
         <div className="flex items-center justify-center gap-3 mb-8">
           <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent to-gray flex items-center justify-center">
             <img src="logo1.png" alt="" />
@@ -52,7 +55,7 @@ export default function SignupPage() {
           </div>
         </div>
 
-        <div className="bg-card-bg border border-border-color rounded-2xl p-8">
+        <div className="auth-card bg-card-bg border border-border-color rounded-2xl p-8">
           <h1 className="text-xl font-bold text-gray-900 mb-1">Créer un compte</h1>
           <p className="text-sm text-gray-500 mb-6">Rejoignez la plateforme de prospection</p>
 

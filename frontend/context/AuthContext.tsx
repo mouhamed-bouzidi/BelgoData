@@ -37,20 +37,34 @@ function setAuthCookie(tokenValue: string | null) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("belgodata_token");
-  });
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === "undefined") return null;
-    const savedUser = localStorage.getItem("belgodata_user");
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const savedToken = localStorage.getItem("belgodata_token");
+    const savedUser = localStorage.getItem("belgodata_user");
+
+    if (savedToken) {
+      setToken(savedToken);
+      axios.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
+    }
+    if (savedUser) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        console.error("Impossible de parser l'utilisateur stocké", error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    } else {
+      delete axios.defaults.headers.common["Authorization"];
     }
   }, [token]);
 

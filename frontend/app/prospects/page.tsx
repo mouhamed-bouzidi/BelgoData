@@ -23,6 +23,7 @@ type Prospect = {
   source?: string;
   score?: number;
   createdAt?: string;
+  createdBy?: { userName?: string };
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -470,7 +471,7 @@ export default function ProspectsPage() {
                 <th className="p-4">Secteur</th>
                 <th className="p-4">Localisation</th>
                 <th className="p-4">Contact</th>
-                <th className="p-4">Source</th>
+                <th className="p-4">Créé par</th>
                 <th className="p-4">Score IA</th>
                 <th className="p-4">Ajouté le</th>
                 {mounted && canModify && <th className="p-4 text-center">Actions</th>}
@@ -539,7 +540,7 @@ export default function ProspectsPage() {
 
                     <td className="p-4">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${p.source === 'linkedin' ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-emerald-50 border-emerald-200 text-emerald-600'}`}>
-                        {p.source ? p.source.toUpperCase() : "OSM"}
+                        {p.createdBy?.userName ? p.createdBy.userName : p.source ? p.source.toUpperCase() : "OSM"}
                       </span>
                     </td>
 

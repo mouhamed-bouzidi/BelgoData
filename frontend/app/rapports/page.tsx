@@ -16,6 +16,7 @@ interface Report {
   score: number;
   presence_digitale: string;
   createdAt: string;
+  requestedBy?: { userName?: string };
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -151,9 +152,9 @@ export default function ReportsListPage() {
                 </th>
                 <th className="px-5 py-3 font-medium">Entreprise</th>
                 <th className="px-5 py-3 font-medium">Secteur</th>
+                <th className="px-5 py-3 font-medium">Demandé par</th>
                 <th className="px-5 py-3 font-medium">Localisation</th>
                 <th className="px-5 py-3 font-medium">Score</th>
-                <th className="px-5 py-3 font-medium">Présence digitale</th>
                 <th className="px-5 py-3 font-medium">Généré le</th>
                 <th className="px-5 py-3 font-medium text-center">Actions</th>
               </tr>
@@ -181,6 +182,9 @@ export default function ReportsListPage() {
                     <CategoryBadge category={r.category} />
                   </td>
                   <td className="px-5 py-3 text-gray-600">
+                    {r.requestedBy?.userName || "Système"}
+                  </td>
+                  <td className="px-5 py-3 text-gray-600">
                     {r.address?.city} ({r.address?.postcode})
                   </td>
                   <td className="px-5 py-3">
@@ -188,7 +192,6 @@ export default function ReportsListPage() {
                       {r.score}/100
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-gray-600">{r.presence_digitale}</td>
                   <td className="px-5 py-3 text-gray-400 text-xs">
                     {new Date(r.createdAt).toLocaleDateString("fr-BE")}
                   </td>

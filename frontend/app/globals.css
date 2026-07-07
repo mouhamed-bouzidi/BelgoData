@@ -48,5 +48,59 @@
 body {
   background: var(--content-bg);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, serif;
+}
+
+/* Auth pages background: mauve gradient + animated decorative blobs */
+.auth-bg {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f7f3ff 0%, #efe6ff 40%, #d7c3ff 100%);
+}
+
+.auth-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 10% 20%, rgba(109,94,240,0.06), transparent 10%),
+              radial-gradient(circle at 90% 80%, rgba(186,136,255,0.06), transparent 8%);
+  pointer-events: none;
+}
+
+.auth-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  opacity: 0.85;
+  transform: translate3d(0,0,0);
+  mix-blend-mode: screen;
+}
+
+.auth-blob.b1 { width: 420px; height: 420px; left: -80px; top: -80px; background: #8b5cf6; animation: float 9s ease-in-out infinite; }
+.auth-blob.b2 { width: 300px; height: 300px; right: -60px; top: 40%; background: #c084fc; animation: float 11s ease-in-out 2s infinite; }
+.auth-blob.b3 { width: 200px; height: 200px; left: 20%; bottom: -60px; background: #a78bfa; animation: float 8s ease-in-out 1s infinite; }
+
+@keyframes float {
+  0% { transform: translateY(0) translateX(0) scale(1); }
+  50% { transform: translateY(-24px) translateX(8px) scale(1.03); }
+  100% { transform: translateY(0) translateX(0) scale(1); }
+}
+
+/* Card backdrop for auth forms */
+.auth-card {
+  position: relative;
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,0.6);
+}
+
+/* Subtle floating geometric elements */
+.auth-shape {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.18);
+  animation: float 6s ease-in-out infinite;
 }

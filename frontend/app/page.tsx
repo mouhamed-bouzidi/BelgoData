@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import Image from "next/image";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { redirect } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
 import { 
@@ -17,10 +17,10 @@ import {
   Mail, 
   CheckCircle2, 
   XCircle, 
+  Trash2,
   FileText, 
   ChevronRight, 
-  Info,
-  Lock 
+  Info 
 } from "lucide-react";
 
 interface Message {
@@ -49,42 +49,129 @@ interface Report {
   argumentaire: string;
 }
 
-const AI_URL = process.env.NEXT_PUBLIC_AI_URL;
-const LOADING_STEPS = [
-  "Interrogation d'OpenStreetMap (OSM) pour la Belgique...",
-  "Extraction et filtrage des coordonnées de contact...",
-  "Analyse de la présence digitale et calcul du score de maturité...",
-  "Génération de l'argumentaire personnalisé via Groq...",
-  "Finalisation et structuration de la fiche prospect..."
+interface ConversationSummary {
+  _id: string;
+  title: string;
+  updatedAt: string;
+  messages: Message[];
+}
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:5001";
+
+const defaultMessageContent = 
+  "Je suis votre assistant de prospection intelligent spécialisé sur le marché belge. Voici ce que nous pouvons faire ensemble :\n\n" +
+  "✦ **Recherche ciblée** : Trouvez des entreprises par secteur et code postal.\n" +
+  "✦ **Analyse de données** : Générez des bilans de prospection automatisés.\n" +
+  "✦ **Suivi intelligent** : Je garde en mémoire notre fil de discussion pour affiner les résultats.";
+
+const defaultActions = [
+  "Restaurants à 1000 Bruxelles",
+  "Cafés à 2000 Anvers",
+  "Pharmacies à 5000 Namur",
 ];
 
-export default function Home() {
+export default function AgentPage() {
   function nowTime() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
 
-  const { user } = useAuth();
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const { user, token } = useAuth();
+  const canChat = user?.role !== "Viewer";
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const isViewer = user?.role === "Viewer";
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const userName = user?.name || "Utilisateur";
-  const [greeting, setGreeting] = useState("Bonjour");
-  
-  const [showSplash, setShowSplash] = useState(false); 
-  const [fadeSplash, setFadeSplash] = useState(false);
+  const [greeting] = useState(() => {
+    const hour = new Date().getHours();
+    return hour >= 18 ? "Bonsoir" : "Bonjour";
+  });
 
-  // 1. Premier useEffect : S'exécute uniquement sur le client après le rendu initial
+  const getAuthConfig = useCallback(() => {
+    return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+  }, [token]);
+
+  const loadConversations = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await axios.get(`${API_URL}/api/conversations`, getAuthConfig());
+      const data: ConversationSummary[] = res.data || [];
+      setConversations(data);
+      if (data.length > 0) {
+        const conv = data[0];
+        setConversationId(conv._id);
+        if (conv.messages && conv.messages.length > 0) {
+          setMessages(conv.messages);
+          localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages));
+        }
+      } else {
+        const title = `Conversation IA - ${new Date().toLocaleDateString("fr-FR")}`;
+        const createRes = await axios.post(
+          `${API_URL}/api/conversations`,
+          { title, messages: [] },
+          getAuthConfig()
+        );
+        setConversationId(createRes.data._id);
+        setConversations([createRes.data]);
+      }
+    } catch (error) {
+      console.error("Erreur chargement conversations :", error);
+    }
+  }, [token, getAuthConfig]);
+
+  const saveConversation = async (updatedMessages: Message[]) => {
+    if (!token || !conversationId) return;
+    try {
+      await axios.put(
+        `${API_URL}/api/conversations/${conversationId}`,
+        { messages: updatedMessages },
+        getAuthConfig()
+      );
+    } catch (error) {
+      console.error("Erreur sauvegarde conversation :", error);
+    }
+  };
+
+  const loadConversation = (conv: ConversationSummary) => {
+    setConversationId(conv._id);
+    setMessages(conv.messages || []);
+    setShowHistory(false);
+    localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages || []));
+  };
+
+  const deleteConversation = async (id: string) => {
+    if (!token) return;
+    if (!confirm("Confirmer la suppression de cette conversation ?")) return;
+    try {
+      await axios.delete(`${API_URL}/api/conversations/${id}`, getAuthConfig());
+      setConversations((prev) => prev.filter((c) => c._id !== id));
+      if (conversationId === id) {
+        localStorage.removeItem("agent_chat_history");
+        setConversationId(null);
+        setMessages([
+          {
+            role: "agent",
+            content: defaultMessageContent,
+            suggestedActions: defaultActions,
+            timestamp: nowTime(),
+          },
+        ]);
+        setActiveReport(null);
+      }
+    } catch (error) {
+      console.error("Erreur suppression conversation:", error);
+    }
+  };
+
   useEffect(() => {
-    const initTimeout = setTimeout(() => {
-      const hour = new Date().getHours();
-      setGreeting(hour >= 18 ? "Bonsoir" : "Bonjour");
-
+    const loadChatHistory = () => {
       if (typeof window !== "undefined") {
         const saved = localStorage.getItem("agent_chat_history");
         if (saved) {
@@ -92,7 +179,6 @@ export default function Home() {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
               setMessages(parsed);
-              setShowSplash(false); 
               setMounted(true);
               return;
             }
@@ -100,41 +186,38 @@ export default function Home() {
             console.error("Erreur historique:", e);
           }
         }
-
-        setShowSplash(true);
-        setMounted(true);
       }
-    }, 0);
+      
+      setMessages([
+        {
+          role: "agent",
+          content: defaultMessageContent,
+          suggestedActions: defaultActions,
+          timestamp: nowTime(),
+        },
+      ]);
+      setMounted(true);
+    };
 
-    return () => clearTimeout(initTimeout);
+    loadChatHistory();
   }, []);
 
-  // 2. Deuxième useEffect : Gère les animations de disparition du splash screen s'il s'affiche
   useEffect(() => {
-    if (showSplash) {
-      const fadeTimeout = setTimeout(() => {
-        setFadeSplash(true);
-      }, 2500);
+    if (!mounted || !token) return;
 
-      const removeTimeout = setTimeout(() => {
-        setShowSplash(false);
-      }, 3000);
+    const fetchConversations = async () => {
+      await loadConversations();
+    };
 
-      return () => {
-        clearTimeout(fadeTimeout);
-        clearTimeout(removeTimeout);
-      };
-    }
-  }, [showSplash]);
+    fetchConversations();
+  }, [mounted, token, loadConversations]);
 
-  // Sauvegarde automatique de l'historique lors des nouveaux messages
   useEffect(() => {
     if (mounted && typeof window !== "undefined" && messages.length > 0) {
       localStorage.setItem("agent_chat_history", JSON.stringify(messages));
     }
   }, [messages, mounted]);
 
-  // Auto-scroll
   useEffect(() => {
     if (mounted) {
       scrollRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -142,28 +225,24 @@ export default function Home() {
   }, [messages, mounted]);
 
   async function sendMessage(text: string) {
-    if (!text.trim() || isViewer) return; // Sécurité stricte contre l'exécution pour le Viewer
+    if (!canChat) {
+      alert("Vous n'avez pas l'accès pour discuter avec le chat. Contactez l'administrateur.");
+      return;
+    }
+    if (!text.trim()) return;
 
     const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
     setLoading(true);
-    setCurrentStepIndex(0); 
-
-    const stepInterval = setInterval(() => {
-      setCurrentStepIndex((prevIndex) => {
-        if (prevIndex < LOADING_STEPS.length - 1) {
-          return prevIndex + 1;
-        }
-        return prevIndex;
-      });
-    }, 3500);
 
     try {
       const res = await axios.post(`${AI_URL}/agent/chat`, {
         message: text,
         history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+        userId: user?.id,
+        userName: user?.name,
       });
 
       const agentMessage: Message = {
@@ -174,11 +253,14 @@ export default function Home() {
         report: res.data?.report,
       };
 
-      setMessages((prev) => [...prev, agentMessage]);
+      const finalMessages = [...updatedMessages, agentMessage];
+      setMessages(finalMessages);
 
       if (res.data?.report) {
         setActiveReport(res.data.report);
       }
+
+      await saveConversation(finalMessages);
     } catch (error) {
       console.error("Erreur agent:", error);
       setMessages((prev) => [
@@ -190,12 +272,11 @@ export default function Home() {
         },
       ]);
     } finally {
-      clearInterval(stepInterval); 
       setLoading(false);
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     sendMessage(input);
   }
@@ -204,180 +285,124 @@ export default function Home() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("agent_chat_history");
     }
-    setMessages([]);
+    setMessages([
+      {
+        role: "agent",
+        content: defaultMessageContent,
+        suggestedActions: defaultActions,
+        timestamp: nowTime(),
+      },
+    ]);
     setActiveReport(null);
-    setShowSplash(true);
-    setFadeSplash(false);
   }
 
-  if (!mounted) {
-    return <div className="h-screen bg-slate-50" />;
-  }
-
+  // Extrait les dernières actions suggérées du flux pour les afficher proprement en bas
   const lastMessage = messages[messages.length - 1];
   const currentSuggestions = lastMessage?.role === "agent" ? lastMessage.suggestedActions : [];
 
   return (
-    <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden relative">
+    <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
       
-      {/* ÉCRAN D'ACCUEIL PLEIN ÉCRAN */}
-      {showSplash && (
-        <div 
-          className={`absolute inset-0 bg-white z-50 flex flex-col items-center justify-center p-6 text-center transition-all duration-500 ease-in-out ${
-            fadeSplash ? "opacity-0 scale-105 pointer-events-none" : "opacity-100"
-          }`}
-        >
-          <div className="max-w-5xl space-y-6">
-            <div className="flex justify-center mb-4">
-              <Image
-                src="/logo1.png"
-                alt="logo BelgoData"
-                width={120}
-                height={54}
-                priority
-              />
-            </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight leading-tight">
-              <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
-                {greeting}, {userName}.
-              </span>
-            </h1>
-            <p className="text-lg md:text-xl text-slate-500 font-medium max-w-xl mx-auto">
-              Comment <span className="text-indigo-600 font-bold">BelgoData</span> peut-il vous aider aujourd&apos;hui ?
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* HEADER PRINCIPAL */}
       <header className="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <Image
-            src="/logo1.png"
-            alt="logo BelgoData"
-            width={90}
-            height={18}
-            priority
-          />
-          <div className="h-5 w-[1px] bg-slate-200" />
-          <div>
-            <h1 className="text-base font-bold tracking-tight flex items-center gap-1.5">
-              <span className="bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent">
-                {greeting}, {userName}
-              </span>
-              <Sparkles size={14} className="text-indigo-500" />
-            </h1>
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+            <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
+              {greeting}, {userName}
+            </span>
+            <Sparkles size={20} className="text-indigo-500 animate-pulse" />
+          </h1>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
+          </p>
         </div>
-        
-        <button
-          onClick={resetConversation}
-          className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
-        >
-          <RefreshCw size={14} />
-          Nouvelle session
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHistory((prev) => !prev)}
+            className="text-xs font-semibold text-indigo-600 border border-indigo-100 bg-white px-3 py-2 rounded-xl shadow-sm hover:bg-indigo-50 transition"
+          >
+            Historique
+          </button>
+          <button
+            onClick={resetConversation}
+            className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+          >
+            <RefreshCw size={14} />
+            Nouvelle session
+          </button>
+        </div>
       </header>
 
-      {/* ZONE DE TRAVAIL */}
-      <div className="flex-1 flex overflow-hidden p-4 gap-4">
+      {/* ZONE DE TRAVAIL (2 Colonnes) */}
+      {!canChat && (
+        <div className="px-8 py-3 bg-rose-50 border-b border-rose-100 text-rose-800 text-sm">
+          Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.
+        </div>
+      )}
+      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
         
         {/* COLONNE CHAT */}
         <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${activeReport ? "w-7/12" : "w-full"}`}>
           
           {/* Fil de discussion */}
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-slate-50/50 to-white">
-            {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2 animate-fade-in">
-                <Bot size={32} className="text-slate-300 stroke-[1.5]" />
-                <p className="text-sm font-medium">Le fil de discussion est vide.</p>
-                <p className="text-xs text-slate-400 max-w-xs text-center">Posez votre première question ci-dessous pour lancer la recherche.</p>
-              </div>
-            ) : (
-              messages.map((msg, i) => (
-                <div key={i} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  
-                  {msg.role === "agent" && (
-                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
-                      <Bot size={16} />
-                    </div>
-                  )}
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                
+                {/* Avatar Agent */}
+                {msg.role === "agent" && (
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+                    <Bot size={16} />
+                  </div>
+                )}
 
-                  <div className={`max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                    <div
-                      className={`px-4 py-3 rounded-2xl text-[14px] leading-relaxed shadow-sm ${
-                        msg.role === "user"
-                          ? "bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-none font-medium"
-                          : "bg-white border border-slate-100 text-slate-800 rounded-tl-none whitespace-pre-line"
-                      }`}
-                    >
-                      {msg.content}
-                    </div>
-
-                    {msg.report && (
-                      <button
-                        onClick={() => setActiveReport(msg.report!)}
-                        className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-600 font-medium hover:bg-indigo-100/70 transition-colors"
-                      >
-                        <Building2 size={13} />
-                        Ouvrir le bilan de {msg.report.name}
-                      </button>
-                    )}
-
-                    <span className="text-[10px] text-slate-400 mt-1.5 px-1">{msg.timestamp}</span>
+                <div className={`max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                  {/* Bulle de texte */}
+                  <div
+                    className={`px-4 py-3 rounded-2xl text-[14px] leading-relaxed shadow-sm ${
+                      msg.role === "user"
+                        ? "bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-none font-medium"
+                        : "bg-white border border-slate-100 text-slate-800 rounded-tl-none whitespace-pre-line"
+                    }`}
+                  >
+                    {msg.content}
                   </div>
 
-                  {msg.role === "user" && (
-                    <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm shrink-0 mt-0.5">
-                      <User size={16} />
-                    </div>
+                  {/* Bouton de rappel de rapport contextuel */}
+                  {msg.report && (
+                    <button
+                      onClick={() => setActiveReport(msg.report!)}
+                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-600 font-medium hover:bg-indigo-100/70 transition-colors"
+                    >
+                      <Building2 size={13} />
+                      Ouvrir le bilan de {msg.report.name}
+                    </button>
                   )}
-                </div>
-              ))
-            )}
 
+                  <span className="text-[10px] text-slate-400 mt-1.5 px-1">{msg.timestamp}</span>
+                </div>
+
+                {/* Avatar User */}
+                {msg.role === "user" && (
+                  <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm shrink-0 mt-0.5">
+                    <User size={16} />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Indicateur de chargement */}
             {loading && (
-              <div className="flex gap-4 justify-start animate-fade-in">
-                <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+              <div className="flex gap-4 justify-start animate-pulse">
+                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 shrink-0">
                   <Bot size={16} />
                 </div>
-                <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-none shadow-sm text-sm text-slate-800 max-w-[78%] space-y-3">
-                  
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-2 w-2 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
-                    </span>
-                    <span className="font-semibold bg-gradient-to-r from-slate-900 to-indigo-950 bg-clip-text text-transparent">
-                      L&apos;Agent BelgoData s&apos;active...
-                    </span>
-                  </div>
-
-                  <div className="space-y-2 pt-1 border-t border-slate-50">
-                    {LOADING_STEPS.map((step, idx) => {
-                      const isDone = idx < currentStepIndex;
-                      const isActive = idx === currentStepIndex;
-
-                      return (
-                        <div 
-                          key={idx} 
-                          className={`flex items-center gap-2.5 text-xs transition-all duration-300 ${
-                            isDone ? "text-emerald-600 font-medium" : isActive ? "text-indigo-600 font-bold animate-pulse" : "text-slate-400"
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded-full flex items-center justify-center border text-[9px] ${
-                            isDone ? "bg-emerald-50 border-emerald-200" : isActive ? "bg-indigo-50 border-indigo-200" : "bg-slate-50 border-slate-200"
-                          }`}>
-                            {isDone ? "✓" : idx + 1}
-                          </div>
-                          <span className={isActive ? "translate-x-1 transition-transform" : ""}>
-                            {step}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
+                <div className="bg-slate-100 px-4 py-2.5 rounded-2xl rounded-tl-none text-xs text-slate-500 font-medium flex items-center gap-2">
+                  <span className="flex h-1.5 w-1.5 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                  </span>
+                  Analyse des données belges...
                 </div>
               </div>
             )}
@@ -385,10 +410,11 @@ export default function Home() {
             <div ref={scrollRef} />
           </div>
 
-          {/* ZONE ACTIONS & FORMULAIRE CONDUITE PAR LES RÔLES */}
+          {/* ZONE ACTIONS & FORMULAIRE BAS DE PAGE */}
           <div className="border-t border-slate-100 bg-white p-4 space-y-4 shrink-0">
-            {/* Suggestions masquées pour le Viewer pour l'empêcher d'exécuter des requêtes IA */}
-            {currentSuggestions && currentSuggestions.length > 0 && !loading && !isViewer && (
+            
+            {/* Puces d'actions suggérées dynamiques */}
+            {canChat && currentSuggestions && currentSuggestions.length > 0 && !loading && (
               <div className="flex flex-wrap gap-2 px-1">
                 {currentSuggestions.map((action) => (
                   <button
@@ -403,13 +429,8 @@ export default function Home() {
               </div>
             )}
 
-            {/* Condition de rendu selon les privilèges de l'utilisateur */}
-            {isViewer ? (
-              <div className="flex items-center gap-2.5 justify-center p-3.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl shadow-sm">
-                <Lock size={15} className="text-amber-600 shrink-0" />
-                <span>Mode Consultation activé : Le rôle <b>Viewer</b> n&apos;est pas autorisé à interagir avec l&apos;Agent IA BelgoData.</span>
-              </div>
-            ) : (
+            {/* Input Form */}
+            {canChat ? (
               <form onSubmit={handleSubmit} className="flex gap-2 items-center">
                 <input
                   type="text"
@@ -427,6 +448,10 @@ export default function Home() {
                   <Send size={16} />
                 </button>
               </form>
+            ) : (
+              <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
+                <div>Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.</div>
+              </div>
             )}
           </div>
         </div>
@@ -434,6 +459,8 @@ export default function Home() {
         {/* PANNEAU LATÉRAL MODERNE (BILAN) */}
         {activeReport && (
           <div className="w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
+            
+            {/* Header du panneau */}
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2">
                 <FileText size={16} className="text-indigo-600" />
@@ -447,8 +474,10 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto scroll-smooth overscroll-contain p-6 space-y-6 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
+            {/* Contenu défilant */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
               
+              {/* Carte Identité Majeure */}
               <div className="flex items-start justify-between bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40">
                 <div className="space-y-1">
                   <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider">
@@ -461,6 +490,7 @@ export default function Home() {
                   </p>
                 </div>
                 
+                {/* Score badge haut niveau */}
                 <div className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]">
                   <div className="text-xs text-slate-400 font-medium">Score</div>
                   <div className={`text-xl font-black ${
@@ -471,6 +501,7 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Grid Contacts rapides */}
               <div className="grid grid-cols-1 gap-2">
                 {activeReport.phone && (
                   <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
@@ -500,6 +531,7 @@ export default function Home() {
                 )}
               </div>
 
+              {/* Diagnostic Digital */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <Info size={12} /> Présence en ligne
@@ -509,11 +541,13 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Analyse descriptive */}
               <div className="space-y-2">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l&apos;analyse</h4>
                 <p className="text-xs text-slate-600 leading-relaxed bg-white">{activeReport.analyse}</p>
               </div>
 
+              {/* Matrice Forces & Faiblesses */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-emerald-50/40 border border-emerald-100/70 p-3.5 rounded-xl space-y-2">
                   <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
@@ -544,12 +578,14 @@ export default function Home() {
                 </div>
               </div>
 
+              {/* Pitch commercial personnalisé */}
               <div className="bg-slate-900 text-slate-100 p-4 rounded-xl space-y-2 shadow-sm">
                 <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d&apos;approche conseillé</h4>
                 <p className="text-xs text-slate-300 leading-relaxed italic">&quot;{activeReport.argumentaire}&quot;</p>
               </div>
             </div>
 
+            {/* Lien d'ouverture global */}
             <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
               <a
                 href={`/rapports/${activeReport._id}`}
@@ -563,9 +599,56 @@ export default function Home() {
         )}
       </div>
 
+      {showHistory && (
+        <div className="absolute right-6 top-28 z-50 w-80 rounded-3xl border border-slate-200 bg-white shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Historique des conversations</p>
+              <p className="text-xs text-slate-500">Chargé pour {userName}</p>
+            </div>
+            <button onClick={() => setShowHistory(false)} className="text-xs text-slate-500 hover:text-slate-900">Fermer</button>
+          </div>
+          <div className="max-h-80 overflow-y-auto px-4 py-3">
+            {conversations.length === 0 ? (
+              <p className="text-sm text-slate-500">Aucune conversation sauvegardée.</p>
+            ) : (
+              <ul className="space-y-2">
+                {conversations.map((conv) => (
+                  <li key={conv._id}>
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => loadConversation(conv)}
+                        className="flex-1 text-left rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
+                      >
+                        <div className="font-semibold">{conv.title}</div>
+                        <div className="text-xs text-slate-400">Mis à jour le {new Date(conv.updatedAt).toLocaleDateString("fr-FR")}</div>
+                      </button>
+
+                      <button
+                        onClick={() => deleteConversation(conv._id)}
+                        title="Supprimer"
+                        className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50/40 hover:bg-rose-100 px-2 py-1 rounded-md border border-rose-100"
+                      >
+                        <Trash2 size={16} strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* FOOTER DISCRET */}
       <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
         Données collectées via les registres publics et analysées par l&apos;IA BelgoData. Validez les données critiques avant démarchage.
       </footer>
     </div>
   );
+}
+
+export function RootPage() {
+  redirect("/agent");
+  return null;
 }
