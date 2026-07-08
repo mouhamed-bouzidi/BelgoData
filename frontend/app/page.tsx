@@ -4,23 +4,27 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { redirect } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
-import { 
-  Bot, 
-  Sparkles, 
-  Send, 
-  RefreshCw, 
-  User, 
-  Building2, 
-  ExternalLink, 
-  MapPin, 
-  Phone, 
-  Mail, 
-  CheckCircle2, 
-  XCircle, 
+import {
+  Bot,
+  Sparkles,
+  Send,
+  RefreshCw,
+  User,
+  Building2,
+  ExternalLink,
+  MapPin,
+  Phone,
+  Mail,
+  CheckCircle2,
+  XCircle,
   Trash2,
-  FileText, 
-  ChevronRight, 
-  Info 
+  FileText,
+  ChevronRight,
+  Info,
+  History,
+  Command,
+  Zap,
+  TrendingUp,
 } from "lucide-react";
 
 interface Message {
@@ -28,7 +32,7 @@ interface Message {
   content: string;
   suggestedActions?: string[];
   timestamp: string;
-  report?: Report; 
+  report?: Report;
 }
 
 interface Report {
@@ -59,7 +63,7 @@ interface ConversationSummary {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:5001";
 
-const defaultMessageContent = 
+const defaultMessageContent =
   "Je suis votre assistant de prospection intelligent spécialisé sur le marché belge. Voici ce que nous pouvons faire ensemble :\n\n" +
   "✦ **Recherche ciblée** : Trouvez des entreprises par secteur et code postal.\n" +
   "✦ **Analyse de données** : Générez des bilans de prospection automatisés.\n" +
@@ -187,7 +191,7 @@ export default function AgentPage() {
           }
         }
       }
-      
+
       setMessages([
         {
           role: "agent",
@@ -204,11 +208,9 @@ export default function AgentPage() {
 
   useEffect(() => {
     if (!mounted || !token) return;
-
     const fetchConversations = async () => {
       await loadConversations();
     };
-
     fetchConversations();
   }, [mounted, token, loadConversations]);
 
@@ -267,7 +269,8 @@ export default function AgentPage() {
         ...prev,
         {
           role: "agent",
-          content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
+          content:
+            "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
           timestamp: nowTime(),
         },
       ]);
@@ -296,113 +299,190 @@ export default function AgentPage() {
     setActiveReport(null);
   }
 
-  // Extrait les dernières actions suggérées du flux pour les afficher proprement en bas
   const lastMessage = messages[messages.length - 1];
   const currentSuggestions = lastMessage?.role === "agent" ? lastMessage.suggestedActions : [];
 
+  // Helper: parse **bold** in agent text
+  const renderContent = (text: string) => {
+    const parts = text.split(/(\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) =>
+      part.startsWith("**") && part.endsWith("**") ? (
+        <strong key={i} className="font-semibold text-stone-900">
+          {part.slice(2, -2)}
+        </strong>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
+  };
+
   return (
-    <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
-      
-      {/* HEADER PRINCIPAL */}
-      <header className="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-            <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
-              {greeting}, {userName}
-            </span>
-            <Sparkles size={20} className="text-indigo-500 animate-pulse" />
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
-          </p>
+    <div
+      className="h-screen flex flex-col font-sans overflow-hidden relative"
+      style={{
+        background:
+          "radial-gradient(1200px 600px at 10% -10%, rgba(167,139,250,0.16) 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(196,181,253,0.12) 0%, transparent 55%), linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%)",
+      }}
+    >
+      {/* Subtle grain overlay */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.35] mix-blend-multiply"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.4 0 0 0 0 0.35 0 0 0 0 0.3 0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+        }}
+      />
+
+      {/* HEADER */}
+      <header className="relative z-10 px-6 md:px-10 py-5 flex items-center justify-between shrink-0 border-b border-stone-200/60 backdrop-blur-md bg-white/40">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-700 via-violet-800 to-indigo-950 flex items-center justify-center shadow-lg shadow-violet-950/20 ring-1 ring-violet-950/10">
+              <Bot size={20} className="text-violet-50" />
+            </div>
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-violet-400 ring-2 ring-white animate-pulse" />
+          </div>
+          <div>
+            <h1 className="text-[15px] font-semibold tracking-tight text-stone-800 flex items-center gap-2">
+              {greeting}, <span className="text-violet-800">{userName}</span>
+              <Sparkles size={14} className="text-violet-500" />
+            </h1>
+            <p className="text-[11px] text-stone-500 mt-0.5 tracking-wide">
+              Assistant de prospection ·{" "}
+              <span className="font-medium text-violet-700">BelgoData IA</span> · En ligne
+            </p>
+          </div>
         </div>
+
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowHistory((prev) => !prev)}
-            className="text-xs font-semibold text-indigo-600 border border-indigo-100 bg-white px-3 py-2 rounded-xl shadow-sm hover:bg-indigo-50 transition"
+            className="group flex items-center gap-2 text-xs font-medium text-stone-700 bg-white/70 border border-stone-200/80 px-3.5 py-2 rounded-full shadow-sm hover:bg-white hover:border-stone-300 hover:shadow transition-all"
           >
+            <History size={13} className="text-stone-500 group-hover:text-violet-700 transition" />
             Historique
           </button>
           <button
             onClick={resetConversation}
-            className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+            className="group flex items-center gap-2 text-xs font-medium text-stone-700 bg-white/70 border border-stone-200/80 px-3.5 py-2 rounded-full shadow-sm hover:bg-white hover:border-stone-300 transition-all active:scale-95"
           >
-            <RefreshCw size={14} />
+            <RefreshCw size={13} className="text-stone-500 group-hover:rotate-180 transition-transform duration-500" />
             Nouvelle session
           </button>
         </div>
       </header>
 
-      {/* ZONE DE TRAVAIL (2 Colonnes) */}
       {!canChat && (
-        <div className="px-8 py-3 bg-rose-50 border-b border-rose-100 text-rose-800 text-sm">
-          Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.
+        <div className="relative z-10 px-8 py-2.5 bg-rose-50/80 border-b border-rose-200/60 text-rose-800 text-xs backdrop-blur-sm flex items-center gap-2">
+          <Info size={13} /> Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.
         </div>
       )}
-      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
-        
-        {/* COLONNE CHAT */}
-        <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${activeReport ? "w-7/12" : "w-full"}`}>
-          
-          {/* Fil de discussion */}
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-slate-50/50 to-white">
+
+      {/* MAIN WORKSPACE */}
+      <div className="relative z-10 flex-1 flex overflow-hidden p-4 md:p-6 gap-4 md:gap-6">
+        {/* CHAT COLUMN */}
+        <div
+          className={`relative rounded-3xl flex flex-col overflow-hidden transition-all duration-500 ease-out ${
+            activeReport ? "w-7/12" : "w-full max-w-5xl mx-auto"
+          }`}
+          style={{
+            background: "linear-gradient(180deg, rgba(255,255,255,0.85), rgba(252,250,246,0.75))",
+            border: "1px solid rgba(120, 113, 108, 0.15)",
+            boxShadow:
+              "0 1px 0 rgba(255,255,255,0.9) inset, 0 20px 40px -20px rgba(41, 37, 36, 0.15), 0 8px 16px -8px rgba(41, 37, 36, 0.08)",
+            backdropFilter: "blur(20px)",
+          }}
+        >
+          {/* Thread */}
+          <div className="flex-1 overflow-y-auto px-5 md:px-8 py-8 space-y-7">
             {messages.map((msg, i) => (
-              <div key={i} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                
-                {/* Avatar Agent */}
+              <div
+                key={i}
+                className={`flex gap-3 md:gap-4 ${
+                  msg.role === "user" ? "justify-end" : "justify-start"
+                } animate-[fadeIn_0.4s_ease-out]`}
+              >
                 {msg.role === "agent" && (
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
-                    <Bot size={16} />
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-700 to-violet-950 text-violet-50 flex items-center justify-center shadow-md shadow-violet-950/20 shrink-0 mt-0.5 ring-1 ring-white/40">
+                    <Bot size={15} />
                   </div>
                 )}
 
-                <div className={`max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                  {/* Bulle de texte */}
+                <div
+                  className={`max-w-[78%] flex flex-col ${
+                    msg.role === "user" ? "items-end" : "items-start"
+                  }`}
+                >
                   <div
-                    className={`px-4 py-3 rounded-2xl text-[14px] leading-relaxed shadow-sm ${
+                    className={`px-4 py-3 text-[14px] leading-relaxed transition-all ${
                       msg.role === "user"
-                        ? "bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-none font-medium"
-                        : "bg-white border border-slate-100 text-slate-800 rounded-tl-none whitespace-pre-line"
+                        ? "rounded-3xl rounded-br-md text-white font-medium"
+                        : "rounded-3xl rounded-bl-md text-stone-800 whitespace-pre-line"
                     }`}
+                    style={
+                      msg.role === "user"
+                        ? {
+                            background:
+                            "linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #4c1d95 100%)",
+                          boxShadow:
+                            "0 8px 20px -8px rgba(92, 43, 173, 0.45), 0 2px 4px rgba(76, 29, 149, 0.15)",
+                          }
+                        : {
+                            background: "rgba(255, 253, 250, 0.9)",
+                            border: "1px solid rgba(214, 208, 200, 0.5)",
+                            boxShadow: "0 2px 8px -2px rgba(41, 37, 36, 0.06)",
+                          }
+                    }
                   >
-                    {msg.content}
+                    {msg.role === "agent" ? renderContent(msg.content) : msg.content}
                   </div>
 
-                  {/* Bouton de rappel de rapport contextuel */}
                   {msg.report && (
                     <button
                       onClick={() => setActiveReport(msg.report!)}
-                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-600 font-medium hover:bg-indigo-100/70 transition-colors"
-                    >
-                      <Building2 size={13} />
-                      Ouvrir le bilan de {msg.report.name}
+                    className="mt-2.5 group flex items-center gap-2 px-3.5 py-2 bg-gradient-to-br from-violet-50 to-violet-100/70 border border-violet-200/70 rounded-2xl text-xs text-violet-900 font-medium hover:from-violet-100 hover:to-violet-200/70 hover:border-violet-300 transition-all shadow-sm"
+                  >
+                    <Building2 size={13} className="text-violet-700" />
+                    Ouvrir le bilan de{" "}
+                    <span className="font-semibold">{msg.report.name}</span>
+                    <ChevronRight
+                      size={13}
+                      className="text-violet-700 group-hover:translate-x-0.5 transition-transform"
+                      />
                     </button>
                   )}
 
-                  <span className="text-[10px] text-slate-400 mt-1.5 px-1">{msg.timestamp}</span>
+                  <span className="text-[10px] text-stone-400 mt-1.5 px-1.5 tracking-wide">
+                    {msg.timestamp}
+                  </span>
                 </div>
 
-                {/* Avatar User */}
                 {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm shrink-0 mt-0.5">
-                    <User size={16} />
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-stone-100 to-stone-200 text-stone-600 flex items-center justify-center border border-stone-300/60 shadow-sm shrink-0 mt-0.5">
+                    <User size={15} />
                   </div>
                 )}
               </div>
             ))}
 
-            {/* Indicateur de chargement */}
             {loading && (
-              <div className="flex gap-4 justify-start animate-pulse">
-                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                  <Bot size={16} />
+              <div className="flex gap-4 justify-start">
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-700 to-violet-950 flex items-center justify-center text-violet-50 shrink-0 shadow-md shadow-violet-950/20">
+                  <Bot size={15} />
                 </div>
-                <div className="bg-slate-100 px-4 py-2.5 rounded-2xl rounded-tl-none text-xs text-slate-500 font-medium flex items-center gap-2">
-                  <span className="flex h-1.5 w-1.5 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
+                <div
+                  className="px-4 py-3 rounded-3xl rounded-bl-md text-xs text-stone-600 font-medium flex items-center gap-3"
+                  style={{
+                    background: "rgba(255, 253, 250, 0.9)",
+                    border: "1px solid rgba(214, 208, 200, 0.5)",
+                  }}
+                >
+                  <span className="flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-600 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-600 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-600 animate-bounce" style={{ animationDelay: "300ms" }} />
                   </span>
-                  Analyse des données belges...
+                  <span className="italic text-stone-500">Analyse des données belges…</span>
                 </div>
               </div>
             )}
@@ -410,109 +490,171 @@ export default function AgentPage() {
             <div ref={scrollRef} />
           </div>
 
-          {/* ZONE ACTIONS & FORMULAIRE BAS DE PAGE */}
-          <div className="border-t border-slate-100 bg-white p-4 space-y-4 shrink-0">
-            
-            {/* Puces d'actions suggérées dynamiques */}
+          {/* Composer */}
+          <div
+            className="px-5 md:px-6 pt-4 pb-5 space-y-3 shrink-0"
+            style={{
+              background:
+                "linear-gradient(180deg, transparent, rgba(250,247,242,0.7) 30%)",
+              borderTop: "1px solid rgba(214, 208, 200, 0.4)",
+            }}
+          >
             {canChat && currentSuggestions && currentSuggestions.length > 0 && !loading && (
-              <div className="flex flex-wrap gap-2 px-1">
+              <div className="flex flex-wrap gap-2">
                 {currentSuggestions.map((action) => (
                   <button
                     key={action}
                     onClick={() => sendMessage(action)}
-                    className="text-xs bg-slate-50 border border-slate-200 text-slate-600 px-3 py-1.5 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all font-medium flex items-center gap-1.5 shadow-sm"
+                    className="group text-xs bg-white/80 border border-stone-200/80 text-stone-700 px-3.5 py-2 rounded-full hover:bg-violet-50 hover:text-violet-800 hover:border-violet-200 transition-all font-medium flex items-center gap-2 shadow-sm hover:shadow"
                   >
-                    <Sparkles size={12} className="text-indigo-500" />
+                    <Zap size={11} className="text-violet-500 group-hover:text-violet-600 transition" />
                     {action}
                   </button>
                 ))}
               </div>
             )}
 
-            {/* Input Form */}
             {canChat ? (
-              <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+              <form
+                onSubmit={handleSubmit}
+                className="flex gap-2 items-center p-1.5 rounded-2xl bg-white/90 border border-stone-200/80 shadow-sm focus-within:border-violet-400 focus-within:shadow-md focus-within:ring-4 focus-within:ring-violet-500/10 transition-all"
+              >
+                <div className="pl-3 text-stone-400">
+                  <Command size={15} />
+                </div>
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
-                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                  placeholder="Décrivez votre recherche — ex : Électriciens à Namur 5000…"
+                  className="flex-1 px-2 py-2.5 bg-transparent text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none"
                   disabled={loading}
                 />
                 <button
                   type="submit"
                   disabled={loading || !input.trim()}
-                  className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
+                  className="text-white px-4 py-2.5 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 shrink-0 flex items-center gap-2 font-medium text-xs"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4c1d95 100%)",
+                    boxShadow: "0 6px 16px -6px rgba(92, 43, 173, 0.45)",
+                  }}
                 >
-                  <Send size={16} />
+                  <Send size={13} />
+                  Envoyer
                 </button>
               </form>
             ) : (
-              <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
-                <div>Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.</div>
+              <div className="flex items-center gap-2 px-4 py-3 bg-stone-50/80 border border-stone-200/60 rounded-2xl text-sm text-stone-600">
+                <Info size={14} />
+                <div>Accès en lecture seule. Contactez l&apos;administrateur pour discuter.</div>
               </div>
             )}
+            <p className="text-[10px] text-stone-400 text-center tracking-wide">
+              Appuyez sur <kbd className="px-1.5 py-0.5 rounded bg-stone-100 border border-stone-200 text-stone-500 font-mono text-[9px]">Entrée</kbd> pour envoyer · Les réponses de l&apos;IA peuvent contenir des erreurs.
+            </p>
           </div>
         </div>
 
-        {/* PANNEAU LATÉRAL MODERNE (BILAN) */}
+        {/* REPORT PANEL */}
         {activeReport && (
-          <div className="w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
-            
-            {/* Header du panneau */}
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-indigo-600" />
-                <h2 className="font-bold text-slate-800 text-sm">Fiche Prospect Qualifiée</h2>
+          <div
+            className="w-5/12 rounded-3xl flex flex-col overflow-hidden animate-[slideIn_0.4s_ease-out]"
+            style={{
+              background: "linear-gradient(180deg, rgba(255,255,255,0.9), rgba(252,250,246,0.8))",
+              border: "1px solid rgba(120, 113, 108, 0.15)",
+              boxShadow:
+                "0 1px 0 rgba(255,255,255,0.9) inset, 0 20px 40px -20px rgba(41, 37, 36, 0.18)",
+              backdropFilter: "blur(20px)",
+            }}
+          >
+            <div className="px-6 py-4 border-b border-stone-200/50 flex items-center justify-between shrink-0 bg-gradient-to-r from-stone-50/50 to-transparent">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-100 to-violet-50 border border-violet-200/60 flex items-center justify-center">
+                  <FileText size={14} className="text-violet-700" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-stone-800 text-sm">Fiche prospect</h2>
+                  <p className="text-[10px] text-stone-500 tracking-wide uppercase">Qualifiée par l&apos;IA</p>
+                </div>
               </div>
               <button
                 onClick={() => setActiveReport(null)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors text-xs font-semibold"
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition text-xs font-semibold"
               >
                 ✕
               </button>
             </div>
 
-            {/* Contenu défilant */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              
-              {/* Carte Identité Majeure */}
-              <div className="flex items-start justify-between bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider">
+            <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6">
+              {/* Identity + Score */}
+              <div
+                className="relative overflow-hidden flex items-start justify-between p-5 rounded-2xl"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #f5f1ea 0%, #ede7dc 100%)",
+                  border: "1px solid rgba(180, 168, 148, 0.3)",
+                }}
+              >
+                <div className="absolute -top-8 -right-0 w-32 h-32 rounded-full bg-violet-200/20 blur-2xl" />
+                <div className="space-y-2 relative">
+                  <span className="text-[10px] font-semibold bg-white/70 text-violet-800 px-2.5 py-1 rounded-full uppercase tracking-wider border border-violet-200/50">
                     {activeReport.category || "Secteur non défini"}
                   </span>
-                  <h3 className="font-bold text-slate-900 text-lg leading-tight pt-1">{activeReport.name}</h3>
-                  <p className="text-xs text-slate-500 flex items-center gap-1">
-                    <MapPin size={12} className="text-slate-400" />
-                    {activeReport.address?.street}, {activeReport.address?.postcode} {activeReport.address?.city}
+                  <h3 className="font-bold text-stone-900 text-lg leading-tight pt-1">
+                    {activeReport.name}
+                  </h3>
+                  <p className="text-xs text-stone-600 flex items-center gap-1.5">
+                    <MapPin size={12} className="text-stone-500" />
+                    {activeReport.address?.street}, {activeReport.address?.postcode}{" "}
+                    {activeReport.address?.city}
                   </p>
                 </div>
-                
-                {/* Score badge haut niveau */}
-                <div className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]">
-                  <div className="text-xs text-slate-400 font-medium">Score</div>
-                  <div className={`text-xl font-black ${
-                    activeReport.score >= 70 ? "text-emerald-600" : activeReport.score >= 50 ? "text-amber-500" : "text-rose-500"
-                  }`}>
+
+                <div className="relative text-center bg-white/90 p-3 rounded-2xl border border-stone-200/60 shadow-sm min-w-[72px]">
+                  <div className="text-[9px] text-stone-500 font-semibold uppercase tracking-wider">
+                    Score
+                  </div>
+                  <div
+                    className={`text-2xl font-black tabular-nums ${
+                      activeReport.score >= 70
+                        ? "text-violet-700"
+                        : activeReport.score >= 50
+                        ? "text-amber-600"
+                        : "text-rose-600"
+                    }`}
+                  >
                     {activeReport.score}
                   </div>
+                  <TrendingUp
+                    size={10}
+                    className={`mx-auto ${
+                      activeReport.score >= 70
+                        ? "text-violet-600"
+                        : activeReport.score >= 50
+                        ? "text-amber-500"
+                        : "text-rose-500"
+                    }`}
+                  />
                 </div>
               </div>
 
-              {/* Grid Contacts rapides */}
+              {/* Contacts */}
               <div className="grid grid-cols-1 gap-2">
                 {activeReport.phone && (
-                  <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                    <Phone size={14} className="text-slate-400" />
-                    <span>{activeReport.phone}</span>
+                  <div className="flex items-center gap-3 text-xs text-stone-700 bg-white/70 p-3 rounded-xl border border-stone-200/60 hover:bg-white transition">
+                    <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+                      <Phone size={13} className="text-violet-700" />
+                    </div>
+                    <span className="font-medium">{activeReport.phone}</span>
                   </div>
                 )}
                 {activeReport.email && (
-                  <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                    <Mail size={14} className="text-slate-400" />
-                    <span className="truncate">{activeReport.email}</span>
+                  <div className="flex items-center gap-3 text-xs text-stone-700 bg-white/70 p-3 rounded-xl border border-stone-200/60 hover:bg-white transition">
+                    <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+                      <Mail size={13} className="text-violet-700" />
+                    </div>
+                    <span className="truncate font-medium">{activeReport.email}</span>
                   </div>
                 )}
                 {activeReport.website && (
@@ -520,78 +662,129 @@ export default function AgentPage() {
                     href={activeReport.website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-between text-xs text-indigo-600 bg-indigo-50/30 p-2.5 rounded-lg border border-indigo-100/40 hover:bg-indigo-50/60 transition-colors"
+                    className="flex items-center justify-between text-xs text-stone-700 bg-white/70 p-3 rounded-xl border border-stone-200/60 hover:bg-white hover:border-violet-300 transition group"
                   >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <ExternalLink size={14} className="text-indigo-400" />
-                      <span className="truncate font-medium">{activeReport.website.replace(/^https?:\/\//, "")}</span>
+                    <div className="flex items-center gap-3 truncate">
+                      <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+                        <ExternalLink size={13} className="text-violet-700" />
+                      </div>
+                      <span className="truncate font-medium">
+                        {activeReport.website.replace(/^https?:\/\//, "")}
+                      </span>
                     </div>
-                    <ChevronRight size={14} className="text-indigo-400 shrink-0" />
+                    <ChevronRight
+                      size={14}
+                      className="text-stone-400 shrink-0 group-hover:translate-x-0.5 group-hover:text-violet-700 transition"
+                    />
                   </a>
                 )}
               </div>
 
-              {/* Diagnostic Digital */}
+              {/* Digital presence */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Info size={12} /> Présence en ligne
+                <h4 className="text-[10px] font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                  <Info size={11} /> Présence en ligne
                 </h4>
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/50 text-xs text-slate-700 leading-relaxed font-medium">
+                <div className="p-4 bg-white/60 rounded-2xl border border-stone-200/50 text-xs text-stone-700 leading-relaxed">
                   {activeReport.presence_digitale}
                 </div>
               </div>
 
-              {/* Analyse descriptive */}
+              {/* Analyse */}
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l&apos;analyse</h4>
-                <p className="text-xs text-slate-600 leading-relaxed bg-white">{activeReport.analyse}</p>
+                <h4 className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
+                  Résumé de l&apos;analyse
+                </h4>
+                <p className="text-xs text-stone-700 leading-relaxed p-4 bg-white/60 rounded-2xl border border-stone-200/50">
+                  {activeReport.analyse}
+                </p>
               </div>
 
-              {/* Matrice Forces & Faiblesses */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-emerald-50/40 border border-emerald-100/70 p-3.5 rounded-xl space-y-2">
-                  <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
-                    <CheckCircle2 size={13} className="text-emerald-600" />
-                    Points forts
+              {/* Forces / Faiblesses */}
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  className="p-4 rounded-2xl space-y-2.5"
+                  style={{
+                    background:
+                      "linear-gradient(160deg, rgba(220,252,231,0.6) 0%, rgba(240,253,244,0.4) 100%)",
+                    border: "1px solid rgba(137, 29, 151, 0.4)",
+                  }}
+                >
+                  <h4 className="font-bold text-[11px] text-violet-900 flex items-center gap-1.5 uppercase tracking-wider">
+                    <CheckCircle2 size={12} className="text-violet-700" />
+                    Forces
                   </h4>
                   <ul className="space-y-1.5">
                     {activeReport.forces?.map((f, i) => (
-                      <li key={i} className="text-[11px] text-slate-600 leading-tight flex items-start gap-1">
-                        <span className="text-emerald-500 font-bold select-none">•</span> {f}
+                      <li
+                        key={i}
+                        className="text-[11px] text-stone-700 leading-snug flex items-start gap-1.5"
+                      >
+                        <span className="text-violet-600 font-bold select-none mt-0.5">✓</span>
+                        <span>{f}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                <div className="bg-rose-50/40 border border-rose-100/70 p-3.5 rounded-xl space-y-2">
-                  <h4 className="font-bold text-xs text-rose-800 flex items-center gap-1.5">
-                    <XCircle size={13} className="text-rose-500" />
-                    Axes d&apos;amélioration
+                <div
+                  className="p-4 rounded-2xl space-y-2.5"
+                  style={{
+                    background:
+                      "linear-gradient(160deg, rgba(255,228,230,0.5) 0%, rgba(254,242,242,0.4) 100%)",
+                    border: "1px solid rgba(252, 165, 165, 0.4)",
+                  }}
+                >
+                  <h4 className="font-bold text-[11px] text-rose-900 flex items-center gap-1.5 uppercase tracking-wider">
+                    <XCircle size={12} className="text-rose-600" />
+                    À améliorer
                   </h4>
                   <ul className="space-y-1.5">
                     {activeReport.faiblesses?.map((f, i) => (
-                      <li key={i} className="text-[11px] text-slate-600 leading-tight flex items-start gap-1">
-                        <span className="text-rose-400 font-bold select-none">•</span> {f}
+                      <li
+                        key={i}
+                        className="text-[11px] text-stone-700 leading-snug flex items-start gap-1.5"
+                      >
+                        <span className="text-rose-500 font-bold select-none mt-0.5">!</span>
+                        <span>{f}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
               </div>
 
-              {/* Pitch commercial personnalisé */}
-              <div className="bg-slate-900 text-slate-100 p-4 rounded-xl space-y-2 shadow-sm">
-                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d&apos;approche conseillé</h4>
-                <p className="text-xs text-slate-300 leading-relaxed italic">&quot;{activeReport.argumentaire}&quot;</p>
+              {/* Argumentaire */}
+              <div
+                className="relative p-5 rounded-2xl space-y-2 overflow-hidden"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #3f2b5b 0%, #2a1b3d 60%, #8b5cf6 100%)",
+                  boxShadow: "0 12px 28px -12px rgba(76, 29, 149, 0.5)",
+                }}
+              >
+                <div className="absolute top-0 right-0 w-24 h-24 bg-violet-400/10 blur-2xl rounded-full" />
+                <div className="relative flex items-center gap-2">
+                  <Sparkles size={12} className="text-violet-200" />
+                  <h4 className="font-bold text-[10px] text-violet-200 tracking-widest uppercase">
+                    Argumentaire d&apos;approche
+                  </h4>
+                </div>
+                <p className="relative text-xs text-stone-200 leading-relaxed italic">
+                  &ldquo;{activeReport.argumentaire}&rdquo;
+                </p>
               </div>
             </div>
 
-            {/* Lien d'ouverture global */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
+            <div className="px-6 py-4 border-t border-stone-200/50 shrink-0 bg-gradient-to-r from-stone-50/50 to-transparent">
               <a
                 href={`/rapports/${activeReport._id}`}
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98]"
+                className="w-full flex items-center justify-center gap-2 text-white py-3 rounded-2xl text-xs font-semibold transition-all active:scale-[0.98] hover:shadow-lg"
+                style={{
+                  background: "linear-gradient(135deg, #1c1917 0%, #292524 100%)",
+                  boxShadow: "0 8px 20px -8px rgba(28, 25, 23, 0.4)",
+                }}
               >
-                Accéder au rapport d&apos;analyse complet
+                Accéder au rapport complet
                 <ChevronRight size={14} />
               </a>
             </div>
@@ -599,51 +792,104 @@ export default function AgentPage() {
         )}
       </div>
 
+      {/* HISTORY POPOVER */}
       {showHistory && (
-        <div className="absolute right-6 top-28 z-50 w-80 rounded-3xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Historique des conversations</p>
-              <p className="text-xs text-slate-500">Chargé pour {userName}</p>
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-stone-900/10 backdrop-blur-sm"
+            onClick={() => setShowHistory(false)}
+          />
+          <div
+            className="fixed right-6 top-24 z-50 w-96 rounded-3xl overflow-hidden animate-[slideIn_0.25s_ease-out]"
+            style={{
+              background: "linear-gradient(180deg, rgba(255,255,255,0.97), rgba(243,229,255,0.95))",
+              border: "1px solid rgba(139, 92, 246, 0.2)",
+              boxShadow:
+                "0 24px 48px -12px rgba(139, 92, 246, 0.15), 0 8px 16px -8px rgba(28, 25, 23, 0.1)",
+              backdropFilter: "blur(24px)",
+            }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-stone-200/60">
+              <div>
+                <p className="text-sm font-semibold text-stone-900 flex items-center gap-2">
+                  <History size={14} className="text-violet-700" />
+                  Historique
+                </p>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  {conversations.length} conversation{conversations.length > 1 ? "s" : ""} · {userName}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowHistory(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition text-xs"
+              >
+                ✕
+              </button>
             </div>
-            <button onClick={() => setShowHistory(false)} className="text-xs text-slate-500 hover:text-slate-900">Fermer</button>
+            <div className="max-h-[420px] overflow-y-auto px-4 py-4">
+              {conversations.length === 0 ? (
+                <div className="text-center py-10 text-stone-500">
+                  <History size={28} className="mx-auto mb-3 text-stone-300" />
+                  <p className="text-sm">Aucune conversation sauvegardée.</p>
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {conversations.map((conv) => (
+                    <li key={conv._id}>
+                      <div className="flex items-center gap-2 group">
+                        <button
+                          onClick={() => loadConversation(conv)}
+                          className={`flex-1 text-left rounded-2xl border px-3.5 py-2.5 text-sm transition ${
+                            conversationId === conv._id
+                            ? "border-violet-300 bg-violet-50/60 text-violet-900"
+                              : "border-stone-200/70 bg-white/60 text-stone-700 hover:bg-white hover:border-stone-300"
+                          }`}
+                        >
+                          <div className="font-medium truncate">{conv.title}</div>
+                          <div className="text-[11px] text-stone-500 mt-0.5">
+                            Mis à jour le{" "}
+                            {new Date(conv.updatedAt).toLocaleDateString("fr-FR")}
+                          </div>
+                        </button>
+                        <button
+                          onClick={() => deleteConversation(conv._id)}
+                          title="Supprimer"
+                          className="w-9 h-9 flex items-center justify-center text-rose-600 bg-rose-50/40 hover:bg-rose-100 rounded-xl border border-rose-100/60 transition opacity-70 group-hover:opacity-100"
+                        >
+                          <Trash2 size={14} strokeWidth={1.8} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
-          <div className="max-h-80 overflow-y-auto px-4 py-3">
-            {conversations.length === 0 ? (
-              <p className="text-sm text-slate-500">Aucune conversation sauvegardée.</p>
-            ) : (
-              <ul className="space-y-2">
-                {conversations.map((conv) => (
-                  <li key={conv._id}>
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => loadConversation(conv)}
-                        className="flex-1 text-left rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        <div className="font-semibold">{conv.title}</div>
-                        <div className="text-xs text-slate-400">Mis à jour le {new Date(conv.updatedAt).toLocaleDateString("fr-FR")}</div>
-                      </button>
-
-                      <button
-                        onClick={() => deleteConversation(conv._id)}
-                        title="Supprimer"
-                        className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50/40 hover:bg-rose-100 px-2 py-1 rounded-md border border-rose-100"
-                      >
-                        <Trash2 size={16} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
+        </>
       )}
 
-      {/* FOOTER DISCRET */}
-      <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
-        Données collectées via les registres publics et analysées par l&apos;IA BelgoData. Validez les données critiques avant démarchage.
+      {/* FOOTER */}
+      <footer className="relative z-10 text-center py-2.5 text-[10px] text-stone-500 border-t border-stone-200/50 backdrop-blur-md bg-white/30 shrink-0 tracking-wide">
+        Données collectées via les registres publics et analysées par l&apos;IA BelgoData · Validez les données critiques avant démarchage.
       </footer>
+
+      <style jsx global>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateX(12px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+          background: rgba(120, 113, 108, 0.25);
+          border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(120, 113, 108, 0.4); }
+      `}</style>
     </div>
   );
 }

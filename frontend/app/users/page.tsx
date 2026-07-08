@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Image from "next/image";
 import axios from "axios";
 import { CheckCircle2, XCircle, Calendar, Mail, Phone, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";

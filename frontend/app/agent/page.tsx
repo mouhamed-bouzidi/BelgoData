@@ -61,9 +61,9 @@ const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:5001";
 
 const defaultMessageContent = 
   "Je suis votre assistant de prospection intelligent spécialisé sur le marché belge. Voici ce que nous pouvons faire ensemble :\n\n" +
-  "✦ **Recherche ciblée** : Trouvez des entreprises par secteur et code postal.\n" +
-  "✦ **Analyse de données** : Générez des bilans de prospection automatisés.\n" +
-  "✦ **Suivi intelligent** : Je garde en mémoire notre fil de discussion pour affiner les résultats.";
+  "✦ Recherche ciblée : Trouvez des entreprises par secteur et code postal.\n" +
+  "✦ Analyse de données : Générez des bilans de prospection automatisés.\n" +
+  "✦ Suivi intelligent : Je garde en mémoire notre fil de discussion pour affiner les résultats.";
 
 const defaultActions = [
   "Restaurants à 1000 Bruxelles",

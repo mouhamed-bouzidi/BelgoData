@@ -187,7 +187,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* 🎯 APPLICATION DE LA SCROLLBAR PREMIUM ICI */}
+            {/*  APPLICATION DE LA SCROLLBAR PREMIUM ICI */}
             <div className="flex-1 space-y-2.5 max-h-[190px] overflow-y-auto pr-3 premium-sector-scrollbar">
               {categoryData.map((c, i) => (
                 <div key={c.name} className="flex items-center justify-between text-xs group p-1.5 rounded-lg hover:bg-slate-50 transition-colors">

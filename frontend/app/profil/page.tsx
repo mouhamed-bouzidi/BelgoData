@@ -18,15 +18,22 @@ export default function ProfilePage() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    // avoid synchronous setState in effect to prevent cascading renders
+    const raf = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   useEffect(() => {
-    if (user) {
-      setName(user.name || "");
-      setPhone(user.phone || "");
-      setEmail(user.email || "");
-      setAvatar(user.avatarUrl || "");
-    }
+    const raf = requestAnimationFrame(() => {
+      if (user) {
+        setName(user.name || "");
+        setPhone(user.phone || "");
+        setEmail(user.email || "");
+        setAvatar(user.avatarUrl || "");
+      }
+    });
+    return () => cancelAnimationFrame(raf);
   }, [user]);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {

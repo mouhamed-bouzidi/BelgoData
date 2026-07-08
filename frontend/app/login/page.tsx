@@ -1,9 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { Building2, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import {Mail, Lock, Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -38,12 +39,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md relative z-10">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent to-gray flex items-center justify-center">
-            <img 
-            src="logo1.png" alt="" 
-            
-            />
-            
+          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent to-gray flex items-center justify-center overflow-hidden">
+            <Image src="/logo1.png" alt="BelgoData logo" width={56} height={56} />
           </div>
           <div>
             <div className="font-bold text-gray-900">BelgoData IA</div>
