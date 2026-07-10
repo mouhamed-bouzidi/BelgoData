@@ -18,6 +18,7 @@ class AgentState(TypedDict):
     response: Optional[str]
     suggested_actions: Optional[List[str]]
     report: Optional[dict] 
+    session_id: Optional[str]
 
 class ExtractionIntention(BaseModel):
     intent: Literal["scrape", "list", "report", "general", "clarify"] = Field(

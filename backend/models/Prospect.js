@@ -15,6 +15,8 @@ const ProspectSchema = new mongoose.Schema(
       country: { type: String, default: "Belgium" },
     },
 
+    sessionId: { type: String, default: null },
+
     // Format GeoJSON — obligatoire pour faire des recherches géo MongoDB (ex: "prospects à 5km de X")
     // Pas de "default" ici : si aucune coordonnée n'est fournie, le champ location reste totalement absent
     location: {

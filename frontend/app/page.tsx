@@ -25,6 +25,10 @@ import {
   Command,
   Zap,
   TrendingUp,
+  Radar,
+  Database,
+  Layers,
+  ArrowUpRight,
 } from "lucide-react";
 
 interface Message {
@@ -33,6 +37,7 @@ interface Message {
   suggestedActions?: string[];
   timestamp: string;
   report?: Report;
+  scraping?: ScrapingResult;
 }
 
 interface Report {
@@ -60,6 +65,26 @@ interface ConversationSummary {
   messages: Message[];
 }
 
+interface Prospect {
+  _id?: string;
+  name: string;
+  category?: string;
+  address?: { city?: string; postcode?: string; street?: string };
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+}
+
+interface ScrapingResult {
+  session_id: string;
+  category: string;
+  postalCode: string;
+  totalFound: number;
+  inserted: number;
+  skipped: number;
+  sample: Prospect[];
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:5001";
 
@@ -75,6 +100,34 @@ const defaultActions = [
   "Pharmacies à 5000 Namur",
 ];
 
+// Le backend renvoie parfois les compteurs sous des noms différents (ou pas du tout),
+// alors qu'ils sont presque toujours présents dans le texte de la réponse
+// (ex : "J'ai trouvé 160 éléments... dont 0 nouveaux profils... 160 profils déjà enregistrés").
+// Ce parseur sert de filet de sécurité pour ne jamais afficher 0 par erreur.
+function parseScrapingStatsFromText(text: string) {
+  const totalMatch =
+    text.match(/trouvé\s+(\d+)\s+élément/i) || text.match(/(\d+)\s+élément[s]?\s+OSM/i);
+  const insertedMatch =
+    text.match(/(\d+)\s+nouveau[x]?\s+profil/i) || text.match(/(\d+)\s+nouvelle[s]?\s+entrepr/i);
+  const skippedMatch =
+    text.match(/(\d+)\s+profil[s]?\s+déjà/i) || text.match(/(\d+)\s+entrepr\w*\s+déjà/i);
+
+  return {
+    total: totalMatch ? parseInt(totalMatch[1], 10) : undefined,
+    inserted: insertedMatch ? parseInt(insertedMatch[1], 10) : undefined,
+    skipped: skippedMatch ? parseInt(skippedMatch[1], 10) : undefined,
+  };
+}
+
+// Retrouve la dernière session de scraping connue dans un historique de messages,
+// pour pouvoir la garder accessible même après plusieurs nouveaux messages.
+function findLastScraping(msgs: Message[]): ScrapingResult | null {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].scraping) return msgs[i].scraping as ScrapingResult;
+  }
+  return null;
+}
+
 export default function AgentPage() {
   function nowTime() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
@@ -87,6 +140,8 @@ export default function AgentPage() {
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
+  const [activeScrapingResult, setActiveScrapingResult] = useState<ScrapingResult | null>(null);
+  const [lastScraping, setLastScraping] = useState<ScrapingResult | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -113,6 +168,7 @@ export default function AgentPage() {
         setConversationId(conv._id);
         if (conv.messages && conv.messages.length > 0) {
           setMessages(conv.messages);
+          setLastScraping(findLastScraping(conv.messages));
           localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages));
         }
       } else {
@@ -146,6 +202,9 @@ export default function AgentPage() {
   const loadConversation = (conv: ConversationSummary) => {
     setConversationId(conv._id);
     setMessages(conv.messages || []);
+    setLastScraping(findLastScraping(conv.messages || []));
+    setActiveScrapingResult(null);
+    setActiveReport(null);
     setShowHistory(false);
     localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages || []));
   };
@@ -168,6 +227,8 @@ export default function AgentPage() {
           },
         ]);
         setActiveReport(null);
+        setActiveScrapingResult(null);
+        setLastScraping(null);
       }
     } catch (error) {
       console.error("Erreur suppression conversation:", error);
@@ -183,6 +244,7 @@ export default function AgentPage() {
             const parsed = JSON.parse(saved);
             if (Array.isArray(parsed) && parsed.length > 0) {
               setMessages(parsed);
+              setLastScraping(findLastScraping(parsed));
               setMounted(true);
               return;
             }
@@ -247,19 +309,60 @@ export default function AgentPage() {
         userName: user?.name,
       });
 
+      let scrapingForMessage: ScrapingResult | undefined;
+      if (res.data?.session_id && res.data?.intent === "scrape") {
+        const d = res.data;
+        // Le texte de la réponse contient quasi-toujours les vrais chiffres
+        // (utile en filet de sécurité si le backend n'envoie pas de champs structurés,
+        // ou envoie des noms de champs différents selon les versions de l'API).
+        const parsedFromText = parseScrapingStatsFromText(d.response || "");
+
+        const totalFound =
+          d.total_found ?? d.totalFound ?? d.found_count ?? d.foundCount ??
+          parsedFromText.total ?? d.scraped_count ?? 0;
+
+        const inserted =
+          d.inserted ?? d.inserted_count ?? d.insertedCount ?? d.new_count ?? d.newCount ??
+          parsedFromText.inserted ?? 0;
+
+        const skipped =
+          d.skipped ?? d.skipped_count ?? d.skippedCount ?? d.existing_count ?? d.existingCount ??
+          parsedFromText.skipped ?? Math.max(totalFound - inserted, 0);
+
+        scrapingForMessage = {
+          session_id: d.session_id,
+          category: d.category || "",
+          postalCode: d.postalCode || "",
+          totalFound,
+          inserted,
+          skipped,
+          sample: d.prospects_sample || [],
+        };
+      }
+
       const agentMessage: Message = {
         role: "agent",
         content: res.data?.response ?? "Je n'ai pas pu obtenir de réponse.",
         timestamp: nowTime(),
         suggestedActions: res.data?.suggested_actions,
         report: res.data?.report,
+        scraping: scrapingForMessage,
       };
 
       const finalMessages = [...updatedMessages, agentMessage];
       setMessages(finalMessages);
 
-      if (res.data?.report) {
+      // On ne ferme le panneau scraping que si un VRAI bilan (avec un nom) arrive,
+      // pas juste parce que le backend renvoie un champ "report" vide/falsy sur chaque message.
+      if (res.data?.report?.name) {
         setActiveReport(res.data.report);
+        setActiveScrapingResult(null);
+      }
+
+      if (scrapingForMessage) {
+        setActiveScrapingResult(scrapingForMessage);
+        setLastScraping(scrapingForMessage);
+        setActiveReport(null);
       }
 
       await saveConversation(finalMessages);
@@ -297,6 +400,8 @@ export default function AgentPage() {
       },
     ]);
     setActiveReport(null);
+    setActiveScrapingResult(null);
+    setLastScraping(null);
   }
 
   const lastMessage = messages[messages.length - 1];
@@ -321,7 +426,7 @@ export default function AgentPage() {
       className="h-screen flex flex-col font-sans overflow-hidden relative"
       style={{
         background:
-          "radial-gradient(1200px 600px at 10% -10%, rgba(167,139,250,0.16) 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(196,181,253,0.12) 0%, transparent 55%), linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%)",
+          "radial-gradient(1200px 600px at 10% -10%, #f0ebe0 0%, transparent 60%), radial-gradient(900px 500px at 100% 0%, #e6efe9 0%, transparent 55%), linear-gradient(180deg, #faf7f2 0%, #f5f1ea 100%)",
       }}
     >
       {/* Subtle grain overlay */}
@@ -337,7 +442,7 @@ export default function AgentPage() {
       <header className="relative z-10 px-6 md:px-10 py-5 flex items-center justify-between shrink-0 border-b border-stone-200/60 backdrop-blur-md bg-white/40">
         <div className="flex items-center gap-4">
           <div className="relative">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-700 via-violet-800 to-indigo-950 flex items-center justify-center shadow-lg shadow-violet-950/20 ring-1 ring-violet-950/10">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-700 via-violet-800 to-purple-900 flex items-center justify-center shadow-lg shadow-violet-900/20 ring-1 ring-violet-950/10">
               <Bot size={20} className="text-violet-50" />
             </div>
             <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-violet-400 ring-2 ring-white animate-pulse" />
@@ -345,7 +450,7 @@ export default function AgentPage() {
           <div>
             <h1 className="text-[15px] font-semibold tracking-tight text-stone-800 flex items-center gap-2">
               {greeting}, <span className="text-violet-800">{userName}</span>
-              <Sparkles size={14} className="text-violet-500" />
+              <Sparkles size={14} className="text-amber-500" />
             </h1>
             <p className="text-[11px] text-stone-500 mt-0.5 tracking-wide">
               Assistant de prospection ·{" "}
@@ -383,7 +488,7 @@ export default function AgentPage() {
         {/* CHAT COLUMN */}
         <div
           className={`relative rounded-3xl flex flex-col overflow-hidden transition-all duration-500 ease-out ${
-            activeReport ? "w-7/12" : "w-full max-w-5xl mx-auto"
+            activeReport || activeScrapingResult ? "w-7/12" : "w-full max-w-5xl mx-auto"
           }`}
           style={{
             background: "linear-gradient(180deg, rgba(255,255,255,0.85), rgba(252,250,246,0.75))",
@@ -403,7 +508,7 @@ export default function AgentPage() {
                 } animate-[fadeIn_0.4s_ease-out]`}
               >
                 {msg.role === "agent" && (
-                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-700 to-violet-950 text-violet-50 flex items-center justify-center shadow-md shadow-violet-950/20 shrink-0 mt-0.5 ring-1 ring-white/40">
+                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-700 to-purple-900 text-violet-50 flex items-center justify-center shadow-md shadow-violet-900/20 shrink-0 mt-0.5 ring-1 ring-white/40">
                     <Bot size={15} />
                   </div>
                 )}
@@ -423,9 +528,9 @@ export default function AgentPage() {
                       msg.role === "user"
                         ? {
                             background:
-                            "linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #4c1d95 100%)",
-                          boxShadow:
-                            "0 8px 20px -8px rgba(92, 43, 173, 0.45), 0 2px 4px rgba(76, 29, 149, 0.15)",
+                              "linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #4c1d95 100%)",
+                            boxShadow:
+                              "0 8px 20px -8px rgba(6, 78, 59, 0.45), 0 2px 4px rgba(6, 78, 59, 0.15)",
                           }
                         : {
                             background: "rgba(255, 253, 250, 0.9)",
@@ -440,14 +545,38 @@ export default function AgentPage() {
                   {msg.report && (
                     <button
                       onClick={() => setActiveReport(msg.report!)}
-                    className="mt-2.5 group flex items-center gap-2 px-3.5 py-2 bg-gradient-to-br from-violet-50 to-violet-100/70 border border-violet-200/70 rounded-2xl text-xs text-violet-900 font-medium hover:from-violet-100 hover:to-violet-200/70 hover:border-violet-300 transition-all shadow-sm"
-                  >
-                    <Building2 size={13} className="text-violet-700" />
-                    Ouvrir le bilan de{" "}
-                    <span className="font-semibold">{msg.report.name}</span>
-                    <ChevronRight
-                      size={13}
-                      className="text-violet-700 group-hover:translate-x-0.5 transition-transform"
+                      className="mt-2.5 group flex items-center gap-2 px-3.5 py-2 bg-gradient-to-br from-amber-50 to-orange-50/60 border border-amber-200/70 rounded-2xl text-xs text-amber-900 font-medium hover:from-amber-100 hover:to-orange-100/60 hover:border-amber-300 transition-all shadow-sm"
+                    >
+                      <Building2 size={13} className="text-amber-700" />
+                      Ouvrir le bilan de{" "}
+                      <span className="font-semibold">{msg.report.name}</span>
+                      <ChevronRight
+                        size={13}
+                        className="text-amber-700 group-hover:translate-x-0.5 transition-transform"
+                      />
+                    </button>
+                  )}
+
+                  {msg.scraping && (
+                    <button
+                      onClick={() => {
+                        setActiveScrapingResult(msg.scraping!);
+                        setActiveReport(null);
+                      }}
+                      className="mt-2.5 group flex items-center gap-2 px-3.5 py-2 bg-gradient-to-br from-violet-50 to-purple-50/60 border border-violet-200/70 rounded-2xl text-xs text-violet-900 font-medium hover:from-violet-100 hover:to-purple-100/60 hover:border-violet-300 transition-all shadow-sm"
+                    >
+                      <Radar size={13} className="text-violet-700" />
+                      Ouvrir la session{" "}
+                      <span className="font-semibold">
+                        {msg.scraping.category || "scraping"}
+                        {msg.scraping.postalCode ? ` · ${msg.scraping.postalCode}` : ""}
+                      </span>
+                      <span className="ml-1 px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-bold tabular-nums border border-violet-200/70">
+                        {msg.scraping.totalFound}
+                      </span>
+                      <ChevronRight
+                        size={13}
+                        className="text-violet-700 group-hover:translate-x-0.5 transition-transform"
                       />
                     </button>
                   )}
@@ -467,7 +596,7 @@ export default function AgentPage() {
 
             {loading && (
               <div className="flex gap-4 justify-start">
-                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-700 to-violet-950 flex items-center justify-center text-violet-50 shrink-0 shadow-md shadow-violet-950/20">
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-700 to-purple-900 flex items-center justify-center text-violet-50 shrink-0 shadow-md shadow-violet-900/20">
                   <Bot size={15} />
                 </div>
                 <div
@@ -499,6 +628,32 @@ export default function AgentPage() {
               borderTop: "1px solid rgba(214, 208, 200, 0.4)",
             }}
           >
+            {lastScraping && !activeScrapingResult && (
+              <button
+                onClick={() => {
+                  setActiveScrapingResult(lastScraping);
+                  setActiveReport(null);
+                }}
+                className="group w-full flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-xs font-medium bg-gradient-to-br from-violet-50 to-purple-50/60 border border-violet-200/70 text-violet-900 hover:from-violet-100 hover:to-purple-100/60 hover:border-violet-300 transition-all shadow-sm"
+              >
+                <Radar size={13} className="text-violet-700 shrink-0" />
+                <span className="truncate">
+                  Reprendre la session scraping{" "}
+                  <span className="font-semibold">
+                    {lastScraping.category || "prospection"}
+                    {lastScraping.postalCode ? ` · ${lastScraping.postalCode}` : ""}
+                  </span>
+                </span>
+                <span className="ml-auto px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[10px] font-bold tabular-nums border border-violet-200/70 shrink-0">
+                  {lastScraping.totalFound}
+                </span>
+                <ChevronRight
+                  size={13}
+                  className="text-violet-700 group-hover:translate-x-0.5 transition-transform shrink-0"
+                />
+              </button>
+            )}
+
             {canChat && currentSuggestions && currentSuggestions.length > 0 && !loading && (
               <div className="flex flex-wrap gap-2">
                 {currentSuggestions.map((action) => (
@@ -507,7 +662,7 @@ export default function AgentPage() {
                     onClick={() => sendMessage(action)}
                     className="group text-xs bg-white/80 border border-stone-200/80 text-stone-700 px-3.5 py-2 rounded-full hover:bg-violet-50 hover:text-violet-800 hover:border-violet-200 transition-all font-medium flex items-center gap-2 shadow-sm hover:shadow"
                   >
-                    <Zap size={11} className="text-violet-500 group-hover:text-violet-600 transition" />
+                    <Zap size={11} className="text-amber-500 group-hover:text-violet-600 transition" />
                     {action}
                   </button>
                 ))}
@@ -537,7 +692,7 @@ export default function AgentPage() {
                   style={{
                     background:
                       "linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4c1d95 100%)",
-                    boxShadow: "0 6px 16px -6px rgba(92, 43, 173, 0.45)",
+                    boxShadow: "0 6px 16px -6px rgba(6, 78, 59, 0.5)",
                   }}
                 >
                   <Send size={13} />
@@ -570,8 +725,8 @@ export default function AgentPage() {
           >
             <div className="px-6 py-4 border-b border-stone-200/50 flex items-center justify-between shrink-0 bg-gradient-to-r from-stone-50/50 to-transparent">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-100 to-violet-50 border border-violet-200/60 flex items-center justify-center">
-                  <FileText size={14} className="text-violet-700" />
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-100 to-amber-50 border border-amber-200/60 flex items-center justify-center">
+                  <FileText size={14} className="text-amber-700" />
                 </div>
                 <div>
                   <h2 className="font-semibold text-stone-800 text-sm">Fiche prospect</h2>
@@ -596,7 +751,7 @@ export default function AgentPage() {
                   border: "1px solid rgba(180, 168, 148, 0.3)",
                 }}
               >
-                <div className="absolute -top-8 -right-0 w-32 h-32 rounded-full bg-violet-200/20 blur-2xl" />
+                <div className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-violet-200/20 blur-2xl" />
                 <div className="space-y-2 relative">
                   <span className="text-[10px] font-semibold bg-white/70 text-violet-800 px-2.5 py-1 rounded-full uppercase tracking-wider border border-violet-200/50">
                     {activeReport.category || "Secteur non défini"}
@@ -651,8 +806,8 @@ export default function AgentPage() {
                 )}
                 {activeReport.email && (
                   <div className="flex items-center gap-3 text-xs text-stone-700 bg-white/70 p-3 rounded-xl border border-stone-200/60 hover:bg-white transition">
-                    <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
-                      <Mail size={13} className="text-violet-700" />
+                    <div className="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center">
+                      <Mail size={13} className="text-sky-700" />
                     </div>
                     <span className="truncate font-medium">{activeReport.email}</span>
                   </div>
@@ -665,8 +820,8 @@ export default function AgentPage() {
                     className="flex items-center justify-between text-xs text-stone-700 bg-white/70 p-3 rounded-xl border border-stone-200/60 hover:bg-white hover:border-violet-300 transition group"
                   >
                     <div className="flex items-center gap-3 truncate">
-                      <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
-                        <ExternalLink size={13} className="text-violet-700" />
+                      <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center">
+                        <ExternalLink size={13} className="text-amber-700" />
                       </div>
                       <span className="truncate font-medium">
                         {activeReport.website.replace(/^https?:\/\//, "")}
@@ -707,7 +862,7 @@ export default function AgentPage() {
                   style={{
                     background:
                       "linear-gradient(160deg, rgba(220,252,231,0.6) 0%, rgba(240,253,244,0.4) 100%)",
-                    border: "1px solid rgba(137, 29, 151, 0.4)",
+                    border: "1px solid rgba(134, 239, 172, 0.4)",
                   }}
                 >
                   <h4 className="font-bold text-[11px] text-violet-900 flex items-center gap-1.5 uppercase tracking-wider">
@@ -758,14 +913,14 @@ export default function AgentPage() {
                 className="relative p-5 rounded-2xl space-y-2 overflow-hidden"
                 style={{
                   background:
-                    "linear-gradient(135deg, #3f2b5b 0%, #2a1b3d 60%, #8b5cf6 100%)",
-                  boxShadow: "0 12px 28px -12px rgba(76, 29, 149, 0.5)",
+                    "linear-gradient(135deg, #1c1917 0%, #292524 60%, #4c1d95 100%)",
+                  boxShadow: "0 12px 28px -12px rgba(28, 25, 23, 0.5)",
                 }}
               >
                 <div className="absolute top-0 right-0 w-24 h-24 bg-violet-400/10 blur-2xl rounded-full" />
                 <div className="relative flex items-center gap-2">
-                  <Sparkles size={12} className="text-violet-200" />
-                  <h4 className="font-bold text-[10px] text-violet-200 tracking-widest uppercase">
+                  <Sparkles size={12} className="text-amber-400" />
+                  <h4 className="font-bold text-[10px] text-amber-300 tracking-widest uppercase">
                     Argumentaire d&apos;approche
                   </h4>
                 </div>
@@ -790,6 +945,223 @@ export default function AgentPage() {
             </div>
           </div>
         )}
+
+        {/* SCRAPING RESULTS PANEL */}
+        {activeScrapingResult && !activeReport && (
+          <div
+            className="w-5/12 rounded-3xl flex flex-col overflow-hidden animate-[slideIn_0.4s_ease-out]"
+            style={{
+              background: "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(252,250,246,0.82))",
+              border: "1px solid rgba(120, 113, 108, 0.15)",
+              boxShadow:
+                "0 1px 0 rgba(255,255,255,0.9) inset, 0 20px 40px -20px rgba(41, 37, 36, 0.18)",
+              backdropFilter: "blur(20px)",
+            }}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-stone-200/50 flex items-center justify-between shrink-0 bg-gradient-to-r from-stone-50/50 to-transparent">
+              <div className="flex items-center gap-2.5">
+                <div className="relative w-9 h-9 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-800 flex items-center justify-center shadow-md shadow-violet-900/25 ring-1 ring-white/40">
+                  <Radar size={15} className="text-violet-50" />
+                  <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-400 ring-2 ring-white animate-pulse" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-stone-800 text-sm leading-tight">
+                    Nouveaux prospects
+                  </h2>
+                  <p className="text-[10px] text-stone-500 tracking-wider uppercase mt-0.5">
+                    Session live · scraping
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveScrapingResult(null)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-stone-500 hover:bg-stone-100 hover:text-stone-800 transition text-xs font-semibold"
+                aria-label="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6">
+              {/* Hero summary */}
+              <div
+                className="relative overflow-hidden p-5 rounded-2xl"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #1c1917 0%, #292524 55%, #4c1d95 100%)",
+                  boxShadow: "0 12px 28px -12px rgba(28, 25, 23, 0.55)",
+                }}
+              >
+                <div className="absolute -top-10 -right-10 w-40 h-40 bg-violet-400/15 blur-3xl rounded-full" />
+                <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-amber-400/10 blur-3xl rounded-full" />
+                <div className="relative flex items-start justify-between gap-4">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Sparkles size={11} className="text-amber-300" />
+                      <span className="text-[10px] font-bold text-amber-300 tracking-widest uppercase">
+                        Récolte terminée
+                      </span>
+                    </div>
+                    <div className="text-4xl font-black text-white tabular-nums leading-none">
+                      {activeScrapingResult.totalFound}
+                    </div>
+                    <p className="text-[11px] text-stone-300 leading-snug">
+                      entreprises identifiées
+                      {activeScrapingResult.category && (
+                        <>
+                          {" "}dans <span className="text-violet-300 font-semibold">{activeScrapingResult.category}</span>
+                        </>
+                      )}
+                      {activeScrapingResult.postalCode && (
+                        <>
+                          {" "}· <span className="text-stone-200">{activeScrapingResult.postalCode}</span>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div className="w-11 h-11 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center backdrop-blur-sm">
+                    <Database size={17} className="text-violet-200" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats trio */}
+              <div className="grid grid-cols-2 gap-3">
+                <div
+                  className="p-4 rounded-2xl"
+                  style={{
+                    background:
+                      "linear-gradient(160deg, rgba(220,252,231,0.65) 0%, rgba(240,253,244,0.4) 100%)",
+                    border: "1px solid rgba(134, 239, 172, 0.45)",
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-violet-900 uppercase tracking-widest">
+                      Nouveaux
+                    </span>
+                    <CheckCircle2 size={12} className="text-violet-700" />
+                  </div>
+                  <div className="text-2xl font-black text-violet-800 tabular-nums mt-1.5">
+                    {activeScrapingResult.inserted}
+                  </div>
+                  <p className="text-[10px] text-violet-800/70 mt-0.5">
+                    ajoutés à la base
+                  </p>
+                </div>
+                <div
+                  className="p-4 rounded-2xl"
+                  style={{
+                    background:
+                      "linear-gradient(160deg, rgba(254,243,199,0.6) 0%, rgba(255,251,235,0.4) 100%)",
+                    border: "1px solid rgba(252, 211, 77, 0.45)",
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-amber-900 uppercase tracking-widest">
+                      Existants
+                    </span>
+                    <Layers size={12} className="text-amber-700" />
+                  </div>
+                  <div className="text-2xl font-black text-amber-800 tabular-nums mt-1.5">
+                    {activeScrapingResult.skipped}
+                  </div>
+                  <p className="text-[10px] text-amber-800/70 mt-0.5">
+                    déjà connus
+                  </p>
+                </div>
+              </div>
+
+              {/* Sample list */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10px] font-bold text-stone-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <Building2 size={11} /> Aperçu des prospects
+                  </h4>
+                  <span className="text-[10px] text-stone-400 tabular-nums">
+                    {activeScrapingResult.sample.length} affichés
+                  </span>
+                </div>
+
+                {activeScrapingResult.sample.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-stone-500 bg-white/50 rounded-2xl border border-dashed border-stone-300/70">
+                    Aucun échantillon disponible.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {activeScrapingResult.sample.map((p, i) => (
+                      <div
+                        key={i}
+                        className="group relative p-3.5 rounded-2xl bg-white/70 border border-stone-200/60 hover:border-violet-300/70 hover:bg-white transition-all hover:shadow-sm animate-[fadeIn_0.4s_ease-out]"
+                        style={{ animationDelay: `${i * 40}ms` }}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 shrink-0 rounded-xl bg-gradient-to-br from-stone-100 to-stone-50 border border-stone-200/60 flex items-center justify-center text-[11px] font-black text-stone-600 tabular-nums">
+                            {String(i + 1).padStart(2, "0")}
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <h5 className="font-semibold text-stone-900 text-[13px] leading-tight truncate">
+                                {p.name}
+                              </h5>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-stone-500">
+                              {p.category && (
+                                <span className="px-1.5 py-0.5 bg-violet-50 text-violet-800 rounded-md font-medium border border-violet-200/60">
+                                  {p.category}
+                                </span>
+                              )}
+                              {p.address?.city && (
+                                <span className="flex items-center gap-1 text-stone-500">
+                                  <MapPin size={9} />
+                                  {p.address.city}
+                                </span>
+                              )}
+                            </div>
+                            {(p.phone || p.email) && (
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-[10.5px] text-stone-600">
+                                {p.phone && (
+                                  <span className="flex items-center gap-1">
+                                    <Phone size={10} className="text-violet-600" />
+                                    <span className="font-medium">{p.phone}</span>
+                                  </span>
+                                )}
+                                {p.email && (
+                                  <span className="flex items-center gap-1 truncate max-w-full">
+                                    <Mail size={10} className="text-sky-600" />
+                                    <span className="truncate font-medium">{p.email}</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer CTA */}
+            <div className="px-6 py-4 border-t border-stone-200/50 shrink-0 bg-gradient-to-r from-stone-50/50 to-transparent">
+              <a
+                href={`/scraping/${activeScrapingResult.session_id}`}
+                className="w-full flex items-center justify-center gap-2 text-white py-3 rounded-2xl text-xs font-semibold transition-all active:scale-[0.98] hover:shadow-lg group"
+                style={{
+                  background: "linear-gradient(135deg, #6d28d9 0%, #6b21a8 60%, #4c1d95 100%)",
+                  boxShadow: "0 8px 20px -8px rgba(6, 95, 70, 0.5)",
+                }}
+              >
+                Voir tous les prospects
+                <ArrowUpRight size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              </a>
+              <p className="text-[10px] text-center text-stone-400 mt-2 tabular-nums">
+                Session <span className="font-mono">{activeScrapingResult.session_id.slice(0, 10)}…</span>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* HISTORY POPOVER */}
@@ -802,10 +1174,10 @@ export default function AgentPage() {
           <div
             className="fixed right-6 top-24 z-50 w-96 rounded-3xl overflow-hidden animate-[slideIn_0.25s_ease-out]"
             style={{
-              background: "linear-gradient(180deg, rgba(255,255,255,0.97), rgba(243,229,255,0.95))",
-              border: "1px solid rgba(139, 92, 246, 0.2)",
+              background: "linear-gradient(180deg, rgba(255,255,255,0.97), rgba(252,250,246,0.95))",
+              border: "1px solid rgba(120, 113, 108, 0.2)",
               boxShadow:
-                "0 24px 48px -12px rgba(139, 92, 246, 0.15), 0 8px 16px -8px rgba(28, 25, 23, 0.1)",
+                "0 24px 48px -12px rgba(28, 25, 23, 0.25), 0 8px 16px -8px rgba(28, 25, 23, 0.1)",
               backdropFilter: "blur(24px)",
             }}
           >
@@ -841,7 +1213,7 @@ export default function AgentPage() {
                           onClick={() => loadConversation(conv)}
                           className={`flex-1 text-left rounded-2xl border px-3.5 py-2.5 text-sm transition ${
                             conversationId === conv._id
-                            ? "border-violet-300 bg-violet-50/60 text-violet-900"
+                              ? "border-violet-300 bg-violet-50/60 text-violet-900"
                               : "border-stone-200/70 bg-white/60 text-stone-700 hover:bg-white hover:border-stone-300"
                           }`}
                         >

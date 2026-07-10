@@ -1,9 +1,9 @@
 from pymongo import MongoClient
 import os
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
-
+import uuid
 
 _client = None
 _db = None
@@ -40,10 +40,12 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
     Retourne un résumé: {inserted, skipped}.
     """
     if not prospects:
-        return {"inserted": 0, "skipped": 0}
+        return {"inserted": 0, "skipped": 0, "session_id": None}
 
     db = get_db()
     collection = db["prospects"]
+
+    session_id = str(uuid.uuid4())
 
     inserted = 0
     skipped = 0
@@ -53,7 +55,7 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
         if existing:
             skipped += 1
             continue
-
+        p["sessionId"] = session_id
         if user_id or user_name:
             p["createdBy"] = {
                 "userId": ObjectId(user_id) if user_id else None,
@@ -63,4 +65,18 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
         collection.insert_one(p)
         inserted += 1
 
-    return {"inserted": inserted, "skipped": skipped}
+        
+    # Sauvegarde la session en base
+    db["scrapingsessions"].insert_one({
+        "sessionId": session_id,
+        "userId": user_id,
+        "userName": user_name,
+        "category": prospects[0].get("category") if prospects else "inconnu",
+        "postalCode": prospects[0].get("address", {}).get("postcode") if prospects else "inconnu",
+        "totalFound": len(prospects),
+        "inserted": inserted,
+        "skipped": skipped,
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return {"inserted": inserted, "skipped": skipped, "session_id": session_id}

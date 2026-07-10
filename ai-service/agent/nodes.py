@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from groq import Groq
 
@@ -62,55 +63,75 @@ Si les informations web sont vides ou non pertinentes, base-toi uniquement sur l
 def classify_intent_node(state: AgentState) -> AgentState:
     """
     Nœud critique d'analyse d'intention via Groq avec Structured Output.
-    Garantit une extraction JSON stricte sans risque d'erreur de syntaxe.
+    Garantit une extraction JSON stricte et un mapping sémantique rigoureux pour la Belgique.
     """
     categories_disponibles = ", ".join(CATEGORY_TAGS.keys())
     
-    # 🎯 PERFECTIONNEMENT DU PROMPT : Règles de filtrage impitoyables pour l'intention 'report'
+    # Nettoyage de sécurité pour contrer les fautes de frappe courantes (ex: "anamur" -> "namur")
+    clean_query = state["user_query"].lower()
+    clean_query = re.sub(r'\banamur\b', 'namur', clean_query)
+    clean_query = re.sub(r'\bantoine\b', 'anvers', clean_query)
+
     prompt_system = f"""Tu es l'ingénieur en chef de l'analyse d'intentions de BelgoData.
-Tu dois analyser la requête et retourner UNIQUEMENT un JSON avec ces champs :
+Tu dois analyser la requête de l'utilisateur et retourner UNIQUEMENT un JSON avec ces champs :
 - intent: "scrape" | "list" | "report" | "general"
 - location: code postal belge (4 chiffres) OU nom de ville belge, sinon null
-- category: une des catégories valides, sinon null
+- category: une des catégories valides répertoriées ci-dessous, sinon null
 - company_name: nom de l'entreprise si intent=report, sinon null
 
-Catégories valides : [{categories_disponibles}]
+RÈGLES CRITIQUES DE MAPPING POUR LES MÉTIERS ET L'ARTISANAT :
+- Si l'utilisateur mentionne un artisan du bâtiment ('plombier', 'chauffagiste', 'electricien', 'menuisier'), associe-le STRICTEMENT à sa clé respective.
+- Si l'utilisateur mentionne 'construction', 'entrepreneur', 'renovation', ou 'batiment', associe-le à 'construction'.
+- Si l'utilisateur mentionne 'artisanat' ou 'artisan' de manière générale, associe-le à 'artisanat'.
+- Ne redirige JAMAIS une demande de construction ou d'artisanat vers la catégorie 'usine' ou 'entrepot'.
 
-RÈGLES STRICTES :
-- "scrape" = l'utilisateur veut TROUVER, CHERCHER, PROSPECTER, RECHERCHER des entreprises (ex: "trouve des bureaux à 2000", "prospecter des restaurants à Anvers", "cherche des cafés")
-- "list" = l'utilisateur veut VOIR, MONTRER, LISTER des prospects déjà en base (ex: "montre-moi les cafés", "liste les prospects")
-- "report" = l'utilisateur veut un BILAN, ANALYSE, RAPPORT sur une entreprise précise (ex: "fait bilan sur X", "analyse l'entreprise Y")
-- "general" = tout le reste (salutation, question hors-sujet, conversation)
+Exemples de correspondance sémantique :
+- 'usine', 'manufacture', 'fabrique' → 'usine'
+- 'entrepôt', 'stock', 'logistique' → 'entrepot'
+- 'atelier', 'artisanat', 'artisan' → 'artisanat'
+- 'menuisier', 'charpentier' → 'menuiserie'
+- 'électricien', 'électricité' → 'electricien'
+- 'plombier', 'plomberie', 'chauffagiste' → 'plombier'
+- 'construction', 'entrepreneur', 'bâtiment' → 'construction'
+- 'gym', 'fitness' → 'salle_sport'
+- 'hôtel', 'hébergement' → 'hotel'
 
-IMPORTANT : Si la requête contient un nom de ville belge (Anvers, Bruxelles, Gand, Liège, Namur, Bruges, Louvain...) sans code postal, convertis-le en code postal dans 'location' :
-- Anvers → 2000
-- Bruxelles → 1000
-- Gand → 9000
-- Liège → 4000
+Catégories valides autorisées : [{categories_disponibles}]
+
+RÈGLES D'INTENTION :
+- "scrape" = l'utilisateur veut TROUVER, CHERCHER, PROSPECTER, RECHERCHER de nouvelles structures (ex: "plombier a namur", "trouve des bureaux à 2000", "cherche des électriciens")
+- "list" = l'utilisateur veut VOIR, MONTRER, LISTER des prospects existant déjà en base locale (ex: "montre-moi les plombiers de ma base")
+- "report" = l'utilisateur veut un BILAN, ANALYSE, RAPPORT sur une entreprise précise (ex: "fait un bilan sur l'entreprise X")
+- "general" = tout le reste (salutations, questions générales, météo)
+
+IMPORTANT : Si la requête contient une ville belge principale, traduis-la immédiatement en code postal valide :
+- Anvers / Antwerpen → 2000
+- Bruxelles / Brussels → 1000
+- Gand / Gent → 9000
+- Liège / Luik → 4000
 - Namur → 5000
-- Bruges → 8000
-- Louvain → 3000
+- Bruges / Brugge → 8000
+- Louvain / Leuven → 3000
 
-Retourne UNIQUEMENT le JSON, rien d'autre.
+Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
 """
 
     try:
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": prompt_system},
-                {"role": "user", "content": state["user_query"]}
+                {"role": "user", "content": clean_query}
             ],
             model="llama-3.3-70b-versatile",
-            temperature=0.0,  # Zéro absolu pour éliminer toute dérive créative
+            temperature=0.0,  # Strict déterminisme pour production
             response_format={"type": "json_object"}
         )
 
         donnees_extraites = json.loads(chat_completion.choices[0].message.content)
         
-        # Validation via le schéma Pydantic
+        # Validation structurée via Pydantic
         intention_validee = ExtractionIntention(**donnees_extraites)
 
-        # Synchronisation avec l'état global du graphe
         state["intent"] = intention_validee.intent
         state["category"] = intention_validee.category
         state["company_name"] = intention_validee.company_name
@@ -136,15 +157,15 @@ def scrape_node(state: AgentState) -> AgentState:
     if not postal_code or not category:
         missing = []
         if not postal_code:
-            missing.append("une localisation/code postal belge (ex: 1000, Leuven, Bruges)")
+            missing.append("une localisation/code postal belge (ex: 5000, Namur, 1000)")
         if not category:
             missing.append(f"une catégorie valide parmi ({', '.join(CATEGORY_TAGS.keys())})")
         
         state["response"] = (
             f"J'ai besoin de {' et '.join(missing)} pour lancer une recherche de prospection précise. "
-            f"Exemple : \"Trouve des pâtisseries à Leuven\"."
+            f"Exemple : \"Trouve des plombiers à Namur\"."
         )
-        state["suggested_actions"] = ["Restaurants à 1000 Bruxelles", "Cafés à 2000 Anvers"]
+        state["suggested_actions"] = ["Plombiers à 5000 Namur", "Construction à 1000 Bruxelles"]
         return state
 
     bbox = get_bbox_from_location(postal_code)
@@ -153,6 +174,7 @@ def scrape_node(state: AgentState) -> AgentState:
         state["suggested_actions"] = []
         return state
 
+    logger.info(f"🚀 Lancement du scraping OpenStreetMap - BBox: {bbox} | Catégorie: {category}")
     raw_results = query_overpass(bbox, category)
     total_osm_elements = len(raw_results.get("elements", []))
     prospects = normalize_osm_results(raw_results, postal_code)
@@ -183,15 +205,24 @@ def scrape_node(state: AgentState) -> AgentState:
         user_id=state.get("user_id"),
         user_name=state.get("user_name"),
     )
+    state["session_id"] = summary.get("session_id")
 
     state["scraped_count"] = summary["inserted"]
     state["prospects_sample"] = prospects_enrichis[:5]
-    state["response"] = (
-        f"✅ Prospection terminée avec succès pour '{postal_code}' !\n"
-        f"J'ai trouvé {total_osm_elements} éléments OSM dans la catégorie '{category}', dont {len(prospects_enrichis)} prospects exploitables.\n"
-        f"• {summary['inserted']} nouveaux profils ajoutés à votre base de prospects.\n"
-        f"• {summary['skipped']} profils déjà enregistrés mis à jour."
-    )
+    
+    if len(prospects_enrichis) == 0:
+        state["response"] = (
+            f"✅ Connexion établie avec OpenStreetMap pour '{postal_code}'.\n"
+            f"Malheureusement, 0 établissement n'est actuellement référencé publiquement sous le tag '{category}' dans cette zone géographique précise.\n"
+            f"Conseil : Essayez d'élargir votre recherche avec un secteur parent (ex: 'artisanat' au lieu de 'plombier')."
+        )
+    else:
+        state["response"] = (
+            f"✅ Prospection terminée avec succès pour '{postal_code}' !\n"
+            f"J'ai trouvé {total_osm_elements} éléments OSM dans la catégorie '{category}', dont {len(prospects_enrichis)} prospects exploitables.\n"
+            f"• {summary['inserted']} nouveaux profils ajoutés à votre base de prospects.\n"
+            f"• {summary['skipped']} profils déjà enregistrés mis à jour."
+        )
     
     other_categories = [c for c in CATEGORY_TAGS.keys() if c != category]
     state["suggested_actions"] = [
@@ -255,7 +286,6 @@ def generate_report_node(state: AgentState) -> AgentState:
         state["suggested_actions"] = []
         return state
 
-    # Utilisation d'une regex pour tolérer les fautes de frappes ou casses partielles
     prospect = collection.find_one({"name": {"$regex": company_name, "$options": "i"}})
     if not prospect:
         state["response"] = f"Je ne trouve pas l'entreprise '{company_name}' dans notre base locale de prospects. Pensez à lancer une recherche géolocalisée (Scraping) au préalable."
@@ -325,7 +355,6 @@ def generate_report_node(state: AgentState) -> AgentState:
 
     reports_collection = db["reports"]
     result = reports_collection.insert_one(report_doc)
-    # Option C : répercute le score RAG sur le prospect
     collection.update_one(
         {"_id": prospect["_id"]},
         {"$set": {"score": analysis.get("score", 50)}}
@@ -365,12 +394,12 @@ def clarify_node(state: AgentState) -> AgentState:
     """
     state["response"] = (
         "Je n'ai pas bien compris les critères de votre recherche. Voici des exemples d'utilisation de la plateforme :\n"
-        "• 🔍 **Lancer un Scraping** : \"Trouve des pâtisseries à Leuven\" ou \"Recherche des garages à Bruges\"\n"
-        "• 📋 **Consulter la Base** : \"Montre-moi les cafés enregistrés à Anvers\"\n"
-        "• 📊 **Générer un Bilan B2B** : \"Fait bilan sur The Bakers\" ou \"Analyse l'entreprise [Nom]\""
+        "• 🔍 **Lancer un Scraping** : \"Trouve des électriciens à Namur\" ou \"Recherche la construction à Bruxelles\"\n"
+        "• 📋 **Consulter la Base** : \"Montre-moi les artisans enregistrés à Namur\"\n"
+        "• 📊 **Générer un Bilan B2B** : \"Fait un bilan sur l'entreprise [Nom]\""
     )
     state["suggested_actions"] = [
-        "Pâtisseries à Leuven",
-        "Cafés à Anvers"
+        "Artisans à Namur",
+        "Construction à Bruxelles"
     ]
     return state

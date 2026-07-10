@@ -10,7 +10,15 @@ from flask_cors import CORS
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+# Configure CORS to allow requests from frontend
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000", "http://localhost:*", "127.0.0.1:*"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
 
 
 @app.route("/health", methods=["GET"])
@@ -99,7 +107,8 @@ def agent_chat():
         "suggested_actions": result.get("suggested_actions", []),
         "prospects_sample": prospects_sample, # Utilise la version sérialisée ici !
         "scraped_count": result.get("scraped_count"),
-        "report": result.get("report")
+        "report": result.get("report"),
+        "session_id": result.get("session_id"),
     }), 200
 
 if __name__ == "__main__":

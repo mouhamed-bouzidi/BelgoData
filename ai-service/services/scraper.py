@@ -5,33 +5,165 @@ import urllib.request
 import re
 from datetime import datetime, timezone
 import logging
-import requests
 
 OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
-USER_AGENT = os.getenv("NOMINATIM_USER_AGENT", "BelgoData-Dev/1.0")  # même UA, réutilisé
+USER_AGENT = os.getenv("NOMINATIM_USER_AGENT", "BelgoData-Dev/1.0")
 
 CATEGORY_TAGS = {
-    "boulangerie": 'shop=bakery',
-    "restaurant": 'amenity=restaurant',
-    "bureau": 'office',
-    "commerce": 'shop',
-    "cafe": 'amenity=cafe',
-    "coiffeur": 'shop=hairdresser',
-    "pharmacie": 'amenity=pharmacy',
-    "finance": 'office=financial',
-    "banque": 'amenity=bank',
-    "ecole": 'amenity=school',
-    "universite": 'amenity=university',
-    "asbl": 'office=ngo',
-    "avocat": 'office=lawyer',
-    "notaire": 'office=notary',
-    "immobilier": 'office=estate_agent',
-    "medecin": 'amenity=doctors',
-    "dentiste": 'amenity=dentist',
-    "hotel": 'tourism=hotel',
-    "supermarche": 'shop=supermarket',
-    "garage": 'shop=car_repair',
-    "assurance": 'office=insurance',
+    # ==================== ALIMENTATION & RESTAURATION ====================
+    "restaurant": '["amenity"="restaurant"]',
+    "cafe": '["amenity"="cafe"]',
+    "boulangerie": '["shop"="bakery"]',
+    "supermarche": '["shop"="supermarket"]',
+    "epicerie": '["shop"="convenience"]',
+    "boucherie": '["shop"="butcher"]',
+    "poissonerie": '["shop"="seafood"]',
+    "patisserie": '["shop"="confectionery"]',
+    "chocolatier": '["shop"="chocolate"]',
+    "traiteur": '["shop"="deli"]',
+    "bar": '["amenity"="bar"]',
+    "fast_food": '["amenity"="fast_food"]',
+    "pizzeria": '["amenity"="fast_food"]',
+
+    # ==================== SANTÉ & BIEN-ÊTRE ====================
+    "medecin": '["amenity"="doctors"]',
+    "dentiste": '["amenity"="dentist"]',
+    "pharmacie": '["amenity"="pharmacy"]',
+    "hopital": '["amenity"="hospital"]',
+    "clinique": '["amenity"="clinic"]',
+    "veterinaire": '["amenity"="veterinary"]',
+    "opticien": '["shop"="optician"]',
+    "kinesitherapeute": '["healthcare"="physiotherapist"]',
+    "psychologue": '["healthcare"="psychotherapist"]',
+    "infirmier": '["healthcare"="nurse"]',
+
+    # ==================== COMMERCE & RETAIL ====================
+    "commerce": '["shop"]',
+    "coiffeur": '["shop"="hairdresser"]',
+    "beaute": '["shop"="beauty"]',
+    "mode": '["shop"="clothes"]',
+    "chaussures": '["shop"="shoes"]',
+    "bijouterie": '["shop"="jewelry"]',
+    "electromenager": '["shop"="appliance"]',
+    "informatique": '["shop"="computer"]',
+    "telephone": '["shop"="mobile_phone"]',
+    "librairie": '["shop"="books"]',
+    "papeterie": '["shop"="stationery"]',
+    "sport": '["shop"="sports"]',
+    "jouets": '["shop"="toys"]',
+    "meubles": '["shop"="furniture"]',
+    "decoration": '["shop"="interior_decoration"]',
+    "fleuriste": '["shop"="florist"]',
+    "jardinerie": '["shop"="garden_centre"]',
+    "bricolage": '["shop"="doityourself"]',
+    "materiel_medical": '["shop"="medical_supply"]',
+    "animaux": '["shop"="pet"]',
+    "photo": '["shop"="photo"]',
+    "musique": '["shop"="music"]',
+    "antiquite": '["shop"="antiques"]',
+    "seconde_main": '["shop"="second_hand"]',
+
+    # ==================== INDUSTRIE & PRODUCTION ====================
+    "usine": '["industrial"="factory"]',
+    "factory": '["industrial"="factory"]',
+    "works": '["man_made"="works"]',
+    "entrepot": '["industrial"="warehouse"]',
+    "atelier": '["industrial"="workshop"]',
+    "imprimerie": '["industrial"="printing"]',
+    "brasserie": '["industrial"="brewery"]',
+    "distillerie": '["industrial"="distillery"]',
+    "agroalimentaire": '["industrial"="food_processing"]',
+    "metallurgie": '["industrial"="metal"]',
+    "chimie": '["industrial"="chemical"]',
+    "menuiserie": '["craft"="carpenter"]',
+    "soudure": '["craft"="metal_construction"]',
+    "electricien": '["craft"="electrician"]',
+    "plombier": '["craft"="plumber"]',
+    "peintre": '["craft"="painter"]',
+    "couvreur": '["craft"="roofer"]',
+    "maçon": '["craft"="mason"]',
+    "carreleur": '["craft"="tiler"]',
+    "vitrier": '["craft"="glaziery"]',
+
+    # ==================== TRANSPORT & LOGISTIQUE ====================
+    "transport": '["office"="logistics"]',
+    "taxi": '["amenity"="taxi"]',
+    "location_voiture": '["amenity"="car_rental"]',
+    "garage": '["shop"="car_repair"]',
+    "concession": '["shop"="car"]',
+    "station_essence": '["amenity"="fuel"]',
+    "parking": '["amenity"="parking"]',
+    "demenagement": '["office"="moving_company"]',
+
+    # ==================== SERVICES PROFESSIONNELS ====================
+    "bureau": '["office"]',
+    "avocat": '["office"="lawyer"]',
+    "notaire": '["office"="notary"]',
+    "finance": '["office"="financial"]',
+    "banque": '["amenity"="bank"]',
+    "assurance": '["office"="insurance"]',
+    "comptable": '["office"="accountant"]',
+    "conseiller_fiscal": '["office"="tax_advisor"]',
+    "consultant": '["office"="consulting"]',
+    "agence_communication": '["office"="advertising_agency"]',
+    "recrutement": '["office"="employment_agency"]',
+    "securite": '["office"="security"]',
+    "nettoyage": '["office"="cleaning"]',
+    "immobilier": '["office"="estate_agent"]',
+    "architecte": '["office"="architect"]',
+    "geometre": '["office"="surveyor"]',
+    "ingenieur": '["office"="engineer"]',
+    "informatique_pro": '["office"="it"]',
+    "telecom": '["office"="telecommunication"]',
+
+    # ==================== ÉDUCATION & FORMATION ====================
+    "ecole": '["amenity"="school"]',
+    "universite": '["amenity"="university"]',
+    "creche": '["amenity"="nursery"]',
+    "college": '["amenity"="college"]',
+    "formation": '["amenity"="training"]',
+    "auto_ecole": '["amenity"="driving_school"]',
+    "musique_ecole": '["amenity"="music_school"]',
+    "sport_ecole": '["leisure"="sports_centre"]',
+
+    # ==================== HÔTELLERIE & TOURISME ====================
+    "hotel": '["tourism"="hotel"]',
+    "auberge": '["tourism"="hostel"]',
+    "camping": '["tourism"="camp_site"]',
+    "gite": '["tourism"="guest_house"]',
+    "agence_voyage": '["shop"="travel_agency"]',
+
+    # ==================== CULTURE & LOISIRS ====================
+    "musee": '["tourism"="museum"]',
+    "theatre": '["amenity"="theatre"]',
+    "cinema": '["amenity"="cinema"]',
+    "galerie": '["tourism"="gallery"]',
+    "salle_sport": '["leisure"="fitness_centre"]',
+    "piscine": '["leisure"="swimming_pool"]',
+    "bowling": '["leisure"="bowling_alley"]',
+    "escape_game": '["leisure"="escape_game"]',
+
+    # ==================== ADMINISTRATION & PUBLIC ====================
+    "mairie": '["amenity"="townhall"]',
+    "poste": '["amenity"="post_office"]',
+    "ambassade": '["amenity"="embassy"]',
+    "police": '["amenity"="police"]',
+    "pompiers": '["amenity"="fire_station"]',
+    "tribunal": '["amenity"="courthouse"]',
+
+    # ==================== ASBL & ONG ====================
+    "asbl": '["office"="ngo"]',
+    "association": '["office"="association"]',
+    "fondation": '["office"="foundation"]',
+    "eglise": '["amenity"="place_of_worship"]',
+    "mosquee": '["amenity"="place_of_worship"]',
+
+    # ==================== ARTISANAT & CONSTRUCTION ====================
+    "construction": '["craft"="builder"]',
+    "artisanat": '["craft"]',
+    "plombier": '["craft"="plumber"]',
+    "electricien": '["craft"="electrician"]',
+    "menuiserie": '["craft"="carpenter"]',
 }
 
 
@@ -56,14 +188,12 @@ class BelgianPostcodeResolver:
                 
                 for item in data:
                     cp = str(item.get("postcode")).strip()
-                    # Priorité linguistique : Français si disponible, sinon Néerlandais, sinon nom brut
                     city_name = item.get("french") or item.get("dutch") or item.get("scraped_name")
                     if cp and city_name and cp not in cls._cache_postcodes:
                         cls._cache_postcodes[cp] = city_name.strip()
                         
         except Exception as e:
             print(f"⚠️ Impossible de charger la base distante des codes postaux: {e}")
-            # Registre de secours pour assurer le fonctionnement en mode dégradé
             cls._cache_postcodes = {
                 "1000": "Bruxelles", "1020": "Laeken", "1030": "Schaerbeek", "1050": "Ixelles",
                 "2000": "Anvers", "3000": "Leuven", "3001": "Heverlee", "3010": "Kessel-Lo", 
@@ -77,14 +207,12 @@ class BelgianPostcodeResolver:
         cls._initialize_belgian_data()
         cp_clean = str(postcode).strip()
         
-        # 1. Résolution de la ville
         city = fallback_city.strip() if fallback_city else ""
         if cp_clean in cls._cache_postcodes:
             city = cls._cache_postcodes[cp_clean]
         elif not city or city.lower() == "bruxelles":
             city = "Bruxelles" if cp_clean.startswith("10") else "Belgique"
 
-        # 2. Résolution de la province par tranche officielle
         province = "Belgique"
         if cp_clean.isdigit() and len(cp_clean) == 4:
             prefix = int(cp_clean[:2])
@@ -125,18 +253,18 @@ def build_overpass_query(bbox: dict, category: str) -> str:
 
     bbox_str = f"{bbox['south']},{bbox['west']},{bbox['north']},{bbox['east']}"
 
+    # Correction sémantique : le tag contient déjà les sélecteurs de clés/valeurs exacts
     query = f"""
     [out:json][timeout:25];
     (
-      node[{tag}]({bbox_str});
-      way[{tag}]({bbox_str});
+      node{tag}({bbox_str});
+      way{tag}({bbox_str});
     );
     out center tags;
     """
     return query
 
 
-# Configuration d'un logger pour voir les alertes dans les logs Docker
 logger = logging.getLogger(__name__)
 
 def query_overpass(bbox: dict, category: str) -> dict:
@@ -152,9 +280,8 @@ def query_overpass(bbox: dict, category: str) -> dict:
             OVERPASS_URL,
             data={"data": query},
             headers=headers,
-            timeout=30,  # Conserve le timeout de 30s
+            timeout=30,
         )
-        # Lève une exception si le statut HTTP est une erreur (ex: 504, 500, 404)
         response.raise_for_status()
         return response.json()
 
@@ -170,10 +297,21 @@ def query_overpass(bbox: dict, category: str) -> dict:
         logger.error(f"⚠️ Erreur réseau globale lors de la requête Overpass : {req_err}")
         return {"elements": []}
 
-def clean_category(raw_category: str | None) -> str:
+
+def clean_category(tags: dict) -> str:
     """
-    Regroupe les tags OSM bruts en catégories macro propres pour le Dashboard.
+    Regroupe les tags OSM bruts multi-clés en macro-catégories propres pour le Dashboard.
     """
+    raw_category = (
+        tags.get("amenity")
+        or tags.get("shop")
+        or tags.get("office")
+        or tags.get("industrial")
+        or tags.get("craft")
+        or tags.get("tourism")
+        or tags.get("leisure")
+    )
+    
     if not raw_category:
         return "Autre"
         
@@ -187,34 +325,42 @@ def clean_category(raw_category: str | None) -> str:
         "cafe": "Restauration & Café",
         "coffee": "Restauration & Café",
         "bakery": "Alimentation & Boulangerie",
+        "supermarket": "Alimentation & Boulangerie",
+        "convenience": "Alimentation & Boulangerie",
+        "butcher": "Alimentation & Boulangerie",
+        "seafood": "Alimentation & Boulangerie",
+        
+        # Industrie, Artisanat & Production
+        "factory": "Industrie & Production",
+        "works": "Industrie & Production",
+        "warehouse": "Industrie & Production",
+        "workshop": "Industrie & Production",
+        "printing": "Industrie & Production",
+        "brewery": "Industrie & Production",
+        "carpenter": "Artisanat & Construction",
+        "metal_construction": "Artisanat & Construction",
+        "electrician": "Artisanat & Construction",
+        "plumber": "Artisanat & Construction",
         
         # Administration & Public
+        "townhall": "Administration & Secteur Public",
+        "post_office": "Administration & Secteur Public",
+        "police": "Administration & Secteur Public",
         "diplomatic": "Administration & Secteur Public",
         "government": "Administration & Secteur Public",
-        "police": "Administration & Secteur Public",
-        "quango": "Administration & Secteur Public",
-        "military": "Administration & Secteur Public",
         
         # Corporate / Services Professionnels
         "company": "Services aux Entreprises",
-        "construction_company": "Services aux Entreprises",
-        "demolition_company": "Services aux Entreprises",
+        "logistics": "Services aux Entreprises",
         "cleaning": "Services aux Entreprises",
-        "surveillance": "Services aux Entreprises",
-        "property_management": "Services aux Entreprises",
         
         # Juridique & Finance
         "lawyer": "Finance & Juridique",
         "notary": "Finance & Juridique",
         "insurance": "Finance & Juridique",
         "tax_advisor": "Finance & Juridique",
-        "financial_advisor": "Finance & Juridique",
-        "financial": "Finance & Juridique",
-        "financial_advice": "Finance & Juridique",
-        "mortgage": "Finance & Juridique",
-        "bank": "Finance & Juridique",
-        "money_lender": "Finance & Juridique",
         "accountant": "Finance & Juridique",
+        "bank": "Finance & Juridique",
         
         # Immobilier
         "estate_agent": "Immobilier",
@@ -223,38 +369,23 @@ def clean_category(raw_category: str | None) -> str:
         # Tech & Médias
         "it": "Tech & Télécom",
         "telecommunication": "Tech & Télécom",
-        "broadcaster": "Tech & Télécom",
-        "publisher": "Tech & Télécom",
-        "newspaper": "Tech & Télécom",
         
-        # Non-Profit & Politique
+        # Non-Profit & Culture
         "association": "Asbl & ONG",
         "ngo": "Asbl & ONG",
-        "charity": "Asbl & ONG",
         "foundation": "Asbl & ONG",
-        "union": "Asbl & ONG",
-        "political_party": "Asbl & ONG",
-        "chamber": "Asbl & ONG",
-        "community_centre": "Asbl & ONG",
-        "social_facility": "Asbl & ONG",
-        "social_centre": "Asbl & ONG",
-        "religion": "Asbl & ONG",
-        "parish": "Asbl & ONG",
+        "place_of_worship": "Asbl & ONG",
+        "museum": "Culture & Loisirs",
+        "theatre": "Culture & Loisirs",
         
         # Éducation & Recherche
-        "research": "Éducation & Recherche",
-        "research_institute": "Éducation & Recherche",
-        "educational_institution": "Éducation & Recherche",
-        "education": "Éducation & Recherche",
+        "school": "Éducation & Recherche",
         "university": "Éducation & Recherche",
-        "tutoring": "Éducation & Recherche",
-        "coaching": "Éducation & Recherche",
-        "library": "Éducation & Recherche",
-        "archive": "Éducation & Recherche",
         
         # Santé
-        "therapist": "Santé",
-        "physician": "Santé",
+        "doctors": "Santé",
+        "dentist": "Santé",
+        "pharmacy": "Santé",
     }
     
     return mapping.get(raw_category, "Autre")
@@ -263,9 +394,9 @@ def clean_category(raw_category: str | None) -> str:
 def normalize_osm_element(element: dict, postal_code: str) -> dict | None:
     """
     Transforme un élément brut Overpass en document Prospect normalisé.
-    Retourne None si l'élément n'a pas de nom (inutilisable comme prospect).
     """
     tags = element.get("tags", {})
+    
     raw_category = (
         tags.get("amenity")
         or tags.get("shop")
@@ -282,28 +413,18 @@ def normalize_osm_element(element: dict, postal_code: str) -> dict | None:
         fallback_label = raw_category.replace("_", " ").capitalize() if raw_category else "Prospect"
         name = f"{fallback_label} {element.get('id', '')}".strip()
 
-    # Pour les "way", la position est dans un sous-objet "center"
     if element["type"] == "way" and "center" in element:
         lat = element["center"].get("lat")
         lon = element["center"].get("lon")
     else:
         lat = element.get("lat")
         lon = element.get("lon")
-
-    # Récupération du tag brut original
-    raw_category = (
-        tags.get("amenity")
-        or tags.get("shop")
-        or tags.get("office")
-    )
     
-    # Unification de la catégorie
-    category = clean_category(raw_category)
+    # Résolution croisée propre de la macro-catégorie sur l'entièreté des tags
+    category = clean_category(tags)
 
-    # Récupération et nettoyage strict du code postal
     postcode_final = tags.get("addr:postcode", "").strip() or postal_code
     
-    # Résolution croisée et sans faille de la Ville et de la Province Belge
     resolved_city, resolved_province = BelgianPostcodeResolver.resolve_city_and_province(
         postcode=postcode_final, 
         fallback_city=tags.get("addr:city")

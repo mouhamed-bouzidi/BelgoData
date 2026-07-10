@@ -34,6 +34,19 @@ export default function ProspectsPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
+  const [sessions, setSessions] = useState<{sessionId: string; category: string; postalCode: string; totalFound: number; createdAt: string}[]>([]);
+  
+  useEffect(() => {
+    async function fetchSessions() {
+      try {
+        const res = await axios.get(`http://localhost:5000/api/scraping/sessions`);
+        setSessions(res.data.slice(0, 3)); 
+      } catch (error) {
+        console.error("Erreur sessions:", error);
+      }
+    }
+    fetchSessions();
+  }, []);
 
   // Filtres de recherche
   const [searchGlobal, setSearchGlobal] = useState("");
@@ -243,7 +256,7 @@ export default function ProspectsPage() {
 
   return (
     <div className="p-8 bg-[#f8fafc] min-h-screen text-[#1e293b]">
-      {/* HEADER SECTION - Protégée contre les conflits d'hydratation SSR */}
+      {/* HEADER SECTION */}
       <div className="flex justify-between items-center mb-1">
         <h1 className="text-2xl font-bold tracking-tight text-[#0f172a]">Prospects</h1>
         <div className="flex gap-3">
@@ -357,14 +370,17 @@ export default function ProspectsPage() {
               <option>Tous les secteurs</option>
               <option>Restauration & Café</option>
               <option>Alimentation & Boulangerie</option>
-              <option>Administration & Secteur Public</option>
+              <option>Industrie & Production</option>
+              <option>Artisanat & Construction</option>
               <option>Services aux Entreprises</option>
               <option>Finance & Juridique</option>
               <option>Immobilier</option>
               <option>Tech & Télécom</option>
+              <option>Administration & Secteur Public</option>
               <option>Asbl & ONG</option>
               <option>Éducation & Recherche</option>
               <option>Santé</option>
+              <option>Culture & Loisirs</option>
               <option>Autre</option>
             </select>
           </div>
@@ -427,6 +443,38 @@ export default function ProspectsPage() {
         </div>
       </form>
 
+      {/* SESSIONS DE SCRAPING RÉCENTES */}
+      {sessions.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-900">Sessions de scraping récentes</h2>
+            <a href="/prospects" className="text-sm text-accent">
+              Voir tous →
+            </a>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {sessions.map((s) => (
+              <a
+                key={s.sessionId}
+                href={`/scraping/${s.sessionId}`}
+                className="bg-white border border-slate-100 rounded-xl p-4 hover:border-accent/30 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold bg-accent-light text-accent px-2 py-0.5 rounded">
+                    {s.category}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(s.createdAt).toLocaleDateString("fr-BE")}
+                  </span>
+                </div>
+                <div className="font-semibold text-gray-900">{s.postalCode}</div>
+                <div className="text-sm text-gray-500">{s.totalFound} prospects trouvés</div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* CONTROLE DES ACTIONS EN MASSE */}
       {mounted && selectedIds.length > 0 && canModify && (
         <button
@@ -437,6 +485,7 @@ export default function ProspectsPage() {
         </button>
       )}
 
+      {/* TABLE CONTAINER */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="p-4 flex justify-between items-center bg-white border-b border-slate-100">
           <p className="text-xs font-bold text-slate-700">{total} prospects trouvés</p>
@@ -615,14 +664,17 @@ export default function ProspectsPage() {
                 >
                   <option>Restauration & Café</option>
                   <option>Alimentation & Boulangerie</option>
-                  <option>Administration & Secteur Public</option>
+                  <option>Industrie & Production</option>
+                  <option>Artisanat & Construction</option>
                   <option>Services aux Entreprises</option>
                   <option>Finance & Juridique</option>
                   <option>Immobilier</option>
                   <option>Tech & Télécom</option>
+                  <option>Administration & Secteur Public</option>
                   <option>Asbl & ONG</option>
                   <option>Éducation & Recherche</option>
                   <option>Santé</option>
+                  <option>Culture & Loisirs</option>
                   <option>Autre</option>
                 </select>
               </div>

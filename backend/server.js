@@ -14,6 +14,8 @@ const settingsRoutes = require("./routes/settings");
 const userManagementRoutes = require("./routes/userManagement");
 const profileRoutes = require("./routes/profile");
 const conversationsRoutes = require("./routes/conversations");
+const scrapingRoutes = require("./routes/scraping");
+
 
 const app = express();
 
@@ -34,6 +36,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/auth/users", userManagementRoutes);
 app.use('/api/profile', profileRoutes);
+app.use("/api/scraping", scrapingRoutes);
+
 
 const PORT = process.env.PORT_BACKEND || 5000;
 
