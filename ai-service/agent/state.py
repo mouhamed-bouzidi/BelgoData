@@ -16,9 +16,13 @@ class AgentState(TypedDict):
     website: Optional[str]
     search: Optional[str]
     limit: Optional[int]
+    rank: Optional[int]
     score_min: Optional[int]
     score_max: Optional[int]
+    has_email: Optional[bool]
+    has_website: Optional[bool]
     delete_confirm: Optional[bool]
+    delete_all_confirm: Optional[bool]
     user_id: Optional[str]
     user_name: Optional[str]
     scraped_count: Optional[int]
@@ -36,12 +40,13 @@ class ExtractionIntention(BaseModel):
         "best",
         "count",
         "delete",
+        "delete_all",
         "report",
         "general",
         "clarify",
     ] = Field(
         ..., 
-        description="L'action demandée : 'scrape' (recherche OSM), 'search'/'list' (recherche en base), 'best' (meilleurs scores), 'count' (compte), 'delete' (suppression), 'report' (bilan entreprise), 'general' (discussion), 'clarify' (si incompréhensible)."
+        description="L'action demandée : 'scrape' (recherche OSM), 'search'/'list' (recherche en base), 'best' (meilleurs scores), 'count' (compte), 'delete' (suppression ciblée par critères), 'delete_all' (suppression de TOUTE la base sans critère), 'report' (bilan entreprise), 'general' (discussion), 'clarify' (si incompréhensible)."
     )
     category: Optional[str] = Field(
         None, 
@@ -65,7 +70,11 @@ class ExtractionIntention(BaseModel):
     )
     limit: Optional[int] = Field(
         None,
-        description="Nombre maximal d'éléments demandés pour les listes ou les meilleurs prospects."
+        description="Nombre maximal d'éléments demandés pour les listes ou les meilleurs prospects (classement TOP N)."
+    )
+    rank: Optional[int] = Field(
+        None,
+        description="Rang précis et unique demandé dans le classement (ex: 'le 2ème meilleur' -> 2). Ne pas confondre avec limit (top N)."
     )
     score_min: Optional[int] = Field(
         None,
@@ -75,7 +84,19 @@ class ExtractionIntention(BaseModel):
         None,
         description="Score maximum pour filtrer des prospects."
     )
+    has_email: Optional[bool] = Field(
+        None,
+        description="true si l'utilisateur veut des prospects AYANT un email ('qui ont un mail'), false s'il veut ceux SANS email ('pas de mail', 'sans email'), sinon null."
+    )
+    has_website: Optional[bool] = Field(
+        None,
+        description="true si l'utilisateur veut des prospects AYANT un site web, false s'il veut ceux SANS site web ('pas de site web', 'sans site'), sinon null."
+    )
     delete_confirm: Optional[bool] = Field(
         None,
-        description="Confirmation explicite de suppression si l'utilisateur le précise."
+        description="Confirmation explicite de suppression ciblée si l'utilisateur le précise."
+    )
+    delete_all_confirm: Optional[bool] = Field(
+        None,
+        description="true UNIQUEMENT si l'utilisateur confirme explicitement et sans ambiguïté vouloir supprimer TOUTE la base de données (ex: 'oui, supprime tout', 'je confirme, efface toute la base')."
     )

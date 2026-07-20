@@ -159,7 +159,8 @@ CATEGORY_TAGS = {
     "mosquee": '["amenity"="place_of_worship"]',
 
     # ==================== ARTISANAT & CONSTRUCTION ====================
-    "construction": '["craft"="builder"]',
+    # Plusieurs tags OSM par catégorie: le tagging réel varie beaucoup selon les contributeurs
+    "construction": ['["craft"="builder"]', '["office"="construction_company"]', '["building"="construction"]'],
     "artisanat": '["craft"]',
     "plombier": '["craft"="plumber"]',
     "electricien": '["craft"="electrician"]',
@@ -251,14 +252,20 @@ def build_overpass_query(bbox: dict, category: str) -> str:
     if tag is None:
         raise ValueError(f"Catégorie inconnue: {category}")
 
+    # Une catégorie peut être associée à un seul tag (str) ou plusieurs (list),
+    # pour couvrir les différentes conventions de tagging OSM du même métier.
+    tags = tag if isinstance(tag, list) else [tag]
+
     bbox_str = f"{bbox['south']},{bbox['west']},{bbox['north']},{bbox['east']}"
 
-    # Correction sémantique : le tag contient déjà les sélecteurs de clés/valeurs exacts
+    clauses = "\n      ".join(
+        f"node{t}({bbox_str});\n      way{t}({bbox_str});" for t in tags
+    )
+
     query = f"""
     [out:json][timeout:25];
     (
-      node{tag}({bbox_str});
-      way{tag}({bbox_str});
+      {clauses}
     );
     out center tags;
     """
@@ -298,6 +305,105 @@ def query_overpass(bbox: dict, category: str) -> dict:
         return {"elements": []}
 
 
+OSM_TAG_TO_GROUP = {
+    # Horeca / Alimentation
+    "restaurant": "Restauration & Café",
+    "fast_food": "Restauration & Café",
+    "bar": "Restauration & Café",
+    "cafe": "Restauration & Café",
+    "coffee": "Restauration & Café",
+    "bakery": "Alimentation & Boulangerie",
+    "supermarket": "Alimentation & Boulangerie",
+    "convenience": "Alimentation & Boulangerie",
+    "butcher": "Alimentation & Boulangerie",
+    "seafood": "Alimentation & Boulangerie",
+
+    # Industrie, Artisanat & Production
+    "factory": "Industrie & Production",
+    "works": "Industrie & Production",
+    "warehouse": "Industrie & Production",
+    "workshop": "Industrie & Production",
+    "printing": "Industrie & Production",
+    "brewery": "Industrie & Production",
+    "carpenter": "Artisanat & Construction",
+    "metal_construction": "Artisanat & Construction",
+    "electrician": "Artisanat & Construction",
+    "plumber": "Artisanat & Construction",
+    "builder": "Artisanat & Construction",
+    "construction_company": "Artisanat & Construction",
+    "construction": "Artisanat & Construction",
+
+    # Administration & Public
+    "townhall": "Administration & Secteur Public",
+    "post_office": "Administration & Secteur Public",
+    "police": "Administration & Secteur Public",
+    "diplomatic": "Administration & Secteur Public",
+    "government": "Administration & Secteur Public",
+
+    # Corporate / Services Professionnels
+    "company": "Services aux Entreprises",
+    "logistics": "Services aux Entreprises",
+    "cleaning": "Services aux Entreprises",
+
+    # Juridique & Finance
+    "lawyer": "Finance & Juridique",
+    "notary": "Finance & Juridique",
+    "insurance": "Finance & Juridique",
+    "tax_advisor": "Finance & Juridique",
+    "accountant": "Finance & Juridique",
+    "bank": "Finance & Juridique",
+
+    # Immobilier
+    "estate_agent": "Immobilier",
+    "coworking": "Immobilier",
+
+    # Tech & Médias
+    "it": "Tech & Télécom",
+    "telecommunication": "Tech & Télécom",
+
+    # Non-Profit & Culture
+    "association": "Asbl & ONG",
+    "ngo": "Asbl & ONG",
+    "foundation": "Asbl & ONG",
+    "place_of_worship": "Asbl & ONG",
+    "museum": "Culture & Loisirs",
+    "theatre": "Culture & Loisirs",
+
+    # Éducation & Recherche
+    "school": "Éducation & Recherche",
+    "university": "Éducation & Recherche",
+
+    # Santé
+    "doctors": "Santé",
+    "dentist": "Santé",
+    "pharmacy": "Santé",
+}
+
+
+def category_search_key_to_group(category: str) -> list[str]:
+    """
+    Convertit une clé de recherche brute (ex: 'construction', 'plombier', utilisée dans
+    CATEGORY_TAGS / classify_intent_node) vers le ou les libellés groupés réellement stockés
+    en base par clean_category(). Nécessaire car la base stocke des macro-catégories, pas
+    les clés de recherche brutes.
+    """
+    tags = CATEGORY_TAGS.get(category)
+    if tags is None:
+        return []
+    tags = tags if isinstance(tags, list) else [tags]
+
+    groups = set()
+    for tag_expr in tags:
+        # tag_expr ressemble à '["craft"="plumber"]' -> on extrait la valeur "plumber"
+        match = re.search(r'=\s*"([^"]+)"', tag_expr)
+        if match:
+            value = match.group(1)
+            group = OSM_TAG_TO_GROUP.get(value)
+            if group:
+                groups.add(group)
+    return list(groups)
+
+
 def clean_category(tags: dict) -> str:
     """
     Regroupe les tags OSM bruts multi-clés en macro-catégories propres pour le Dashboard.
@@ -310,85 +416,15 @@ def clean_category(tags: dict) -> str:
         or tags.get("craft")
         or tags.get("tourism")
         or tags.get("leisure")
+        or tags.get("building")
     )
     
     if not raw_category:
         return "Autre"
         
     raw_category = raw_category.lower().strip()
-    
-    mapping = {
-        # Horeca / Alimentation
-        "restaurant": "Restauration & Café",
-        "fast_food": "Restauration & Café",
-        "bar": "Restauration & Café",
-        "cafe": "Restauration & Café",
-        "coffee": "Restauration & Café",
-        "bakery": "Alimentation & Boulangerie",
-        "supermarket": "Alimentation & Boulangerie",
-        "convenience": "Alimentation & Boulangerie",
-        "butcher": "Alimentation & Boulangerie",
-        "seafood": "Alimentation & Boulangerie",
-        
-        # Industrie, Artisanat & Production
-        "factory": "Industrie & Production",
-        "works": "Industrie & Production",
-        "warehouse": "Industrie & Production",
-        "workshop": "Industrie & Production",
-        "printing": "Industrie & Production",
-        "brewery": "Industrie & Production",
-        "carpenter": "Artisanat & Construction",
-        "metal_construction": "Artisanat & Construction",
-        "electrician": "Artisanat & Construction",
-        "plumber": "Artisanat & Construction",
-        
-        # Administration & Public
-        "townhall": "Administration & Secteur Public",
-        "post_office": "Administration & Secteur Public",
-        "police": "Administration & Secteur Public",
-        "diplomatic": "Administration & Secteur Public",
-        "government": "Administration & Secteur Public",
-        
-        # Corporate / Services Professionnels
-        "company": "Services aux Entreprises",
-        "logistics": "Services aux Entreprises",
-        "cleaning": "Services aux Entreprises",
-        
-        # Juridique & Finance
-        "lawyer": "Finance & Juridique",
-        "notary": "Finance & Juridique",
-        "insurance": "Finance & Juridique",
-        "tax_advisor": "Finance & Juridique",
-        "accountant": "Finance & Juridique",
-        "bank": "Finance & Juridique",
-        
-        # Immobilier
-        "estate_agent": "Immobilier",
-        "coworking": "Immobilier",
-        
-        # Tech & Médias
-        "it": "Tech & Télécom",
-        "telecommunication": "Tech & Télécom",
-        
-        # Non-Profit & Culture
-        "association": "Asbl & ONG",
-        "ngo": "Asbl & ONG",
-        "foundation": "Asbl & ONG",
-        "place_of_worship": "Asbl & ONG",
-        "museum": "Culture & Loisirs",
-        "theatre": "Culture & Loisirs",
-        
-        # Éducation & Recherche
-        "school": "Éducation & Recherche",
-        "university": "Éducation & Recherche",
-        
-        # Santé
-        "doctors": "Santé",
-        "dentist": "Santé",
-        "pharmacy": "Santé",
-    }
-    
-    return mapping.get(raw_category, "Autre")
+
+    return OSM_TAG_TO_GROUP.get(raw_category, "Autre")
 
 
 def normalize_osm_element(element: dict, postal_code: str) -> dict | None:

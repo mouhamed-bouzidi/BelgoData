@@ -1,4 +1,3 @@
-
 from langgraph.graph import StateGraph, END
 from agent.state import AgentState
 from agent.nodes import (
@@ -8,6 +7,7 @@ from agent.nodes import (
     best_prospects_node,
     count_prospects_node,
     delete_prospects_node,
+    delete_all_prospects_node,
     general_node,
     generate_report_node,
     clarify_node,
@@ -25,6 +25,8 @@ def route_by_intent(state: AgentState) -> str:
         return "count"
     if intent == "delete":
         return "delete"
+    if intent == "delete_all":
+        return "delete_all"
     if intent == "report":
         return "generate_report"
     if intent == "clarify":
@@ -41,6 +43,7 @@ def build_agent_graph():
     graph.add_node("best", best_prospects_node)
     graph.add_node("count", count_prospects_node)
     graph.add_node("delete", delete_prospects_node)
+    graph.add_node("delete_all", delete_all_prospects_node)
     graph.add_node("general", general_node)
     graph.add_node("generate_report", generate_report_node)
     graph.add_node("clarify", clarify_node)
@@ -58,6 +61,7 @@ def build_agent_graph():
             "best": "best",
             "count": "count",
             "delete": "delete",
+            "delete_all": "delete_all",
             "generate_report": "generate_report",
             "general": "general",
             "clarify": "clarify",
@@ -70,6 +74,7 @@ def build_agent_graph():
     graph.add_edge("best", END)
     graph.add_edge("count", END)
     graph.add_edge("delete", END)
+    graph.add_edge("delete_all", END)
     graph.add_edge("generate_report", END)
     graph.add_edge("general", END)
     graph.add_edge("clarify", END)

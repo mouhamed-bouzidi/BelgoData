@@ -7,7 +7,7 @@ from groq import Groq
 
 from agent.state import AgentState, ExtractionIntention
 from services.geocoding import get_bbox_from_location
-from services.scraper import query_overpass, normalize_osm_results, CATEGORY_TAGS
+from services.scraper import query_overpass, normalize_osm_results, CATEGORY_TAGS, category_search_key_to_group
 from services.db import insert_prospects, get_db, mongo_to_json_safe
 from services.web_search import search_company_web, format_web_context
 from services.deep_scraper import deep_scraping_prospect
@@ -80,10 +80,14 @@ Tu dois analyser la requête de l'utilisateur et retourner UNIQUEMENT un JSON av
 - category: une des catégories valides répertoriées ci-dessous, sinon null
 - company_name: nom de l'entreprise si intent=report, sinon null
 - search: terme libre de recherche pour la base ou la suppression, sinon null
-- limit: nombre maximum d'éléments demandés, sinon null
+- limit: nombre maximum d'éléments demandés pour un classement TOP N (ex: "les 5 meilleurs", "top 10") -> limit=N. Pour un singulier explicite ("le meilleur prospect", "un prospect") -> limit=1. NE PAS utiliser limit pour une demande de rang précis (voir 'rank' ci-dessous). Sinon null.
+- rank: UNIQUEMENT si l'utilisateur demande un rang précis et unique dans le classement (ex: "le 2ème meilleur score" -> rank=2, "le 3ème meilleur prospect" -> rank=3, "le deuxième" -> rank=2). Ne PAS confondre avec limit : "les 2 meilleurs" -> limit=2 (rank=null), alors que "le 2ème meilleur" -> rank=2 (limit=null).
 - score_min: filtre sur le score minimum, sinon null
 - score_max: filtre sur le score maximum, sinon null
-- delete_confirm: true si l'utilisateur confirme expressément une suppression, sinon false ou null
+- has_email: true si l'utilisateur veut des prospects QUI ONT un email, false si l'utilisateur veut ceux SANS email/pas de mail, sinon null
+- has_website: true si l'utilisateur veut des prospects QUI ONT un site web, false si l'utilisateur veut ceux SANS site web/pas de site, sinon null
+- delete_confirm: true si l'utilisateur confirme expressément une suppression ciblée, sinon false ou null
+- delete_all_confirm: true UNIQUEMENT si l'utilisateur confirme explicitement vouloir supprimer TOUTE la base ("oui supprime tout", "je confirme"), sinon null
 
 RÈGLES CRITIQUES DE MAPPING POUR LES MÉTIERS ET L'ARTISANAT :
 - Si l'utilisateur mentionne un artisan du bâtiment ('plombier', 'chauffagiste', 'electricien', 'menuisier'), associe-le STRICTEMENT à sa clé respective.
@@ -104,13 +108,17 @@ Exemples de correspondance sémantique :
 
 Catégories valides autorisées : [{categories_disponibles}]
 
-RÈGLES D'INTENTION :
-- "scrape" = l'utilisateur veut TROUVER, CHERCHER, PROSPECTER, RECHERCHER de nouvelles structures (ex: "plombier a namur", "trouve des bureaux à 2000", "cherche des électriciens")
-- "search" = l'utilisateur veut rechercher dans la base de prospects existante, souvent avec des critères ou un terme (ex: "recherche des restaurants à 1000", "trouve mes prospects de Namur")
+RÈGLES D'INTENTION (CRITIQUE - LIRE ATTENTIVEMENT POUR ÉVITER LA CONFUSION) :
+- "scrape" = c'est L'INTENTION PAR DÉFAUT dès qu'un secteur + une localisation sont mentionnés, quel que soit le verbe utilisé (chercher, trouver, rechercher, prospecter...).
+  Exemples : "plombier a namur", "trouve des bureaux à 2000", "cherche des électriciens à Namur", "recherche des restaurants à 1000", "Chercher des restaurant à 5000".
+- "search" = UNIQUEMENT si l'utilisateur fait une référence EXPLICITE à sa base/ses prospects existants (mots-clés : "ma base", "mes prospects", "prospects enregistrés", "déjà scrapé", "en base de données", "que j'ai trouvé"). 
+  Exemples : "recherche dans mes prospects les restaurants de 1000", "trouve mes prospects de Namur", "dans ma base, montre les plombiers".
+- RÈGLE DE DÉSAMBIGUÏSATION : en cas de doute entre "scrape" et "search", choisis TOUJOURS "scrape" — l'utilisateur préfère une vraie recherche terrain plutôt qu'un résultat vide silencieux sur une base non alimentée.
 - "list" = l'utilisateur veut VOIR ou LISTER des prospects existants en base (ex: "montre-moi les plombiers de ma base")
 - "best" = l'utilisateur veut voir les meilleurs prospects ou les plus hauts scores (ex: "montre-moi les meilleurs prospects", "top prospects score")
 - "count" = l'utilisateur veut connaître le nombre de prospects correspondant à un filtre (ex: "combien de prospects à Namur", "nombre de restaurants")
 - "delete" = l'utilisateur veut supprimer des prospects existants selon des critères (ex: "supprime les prospects de 1000", "efface les prospects sans email")
+- "delete_all" = l'utilisateur veut supprimer TOUTE la base sans aucun critère (ex: "supprime toute la base de données", "efface tous les prospects"). N'attribue JAMAIS delete_all_confirm=true sauf confirmation explicite et sans ambiguïté dans le message lui-même.
 - "report" = l'utilisateur veut un BILAN, ANALYSE, RAPPORT sur une entreprise précise (ex: "fait un bilan sur l'entreprise X")
 - "general" = tout le reste (salutations, questions générales, météo)
 
@@ -151,7 +159,11 @@ Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
         state["limit"] = intention_validee.limit
         state["score_min"] = intention_validee.score_min
         state["score_max"] = intention_validee.score_max
+        state["rank"] = intention_validee.rank
+        state["has_email"] = intention_validee.has_email
+        state["has_website"] = intention_validee.has_website
         state["delete_confirm"] = intention_validee.delete_confirm
+        state["delete_all_confirm"] = intention_validee.delete_all_confirm
 
     except Exception as e:
         logger.error(f"⚠️ Erreur lors de l'extraction de l'intention : {e}")
@@ -194,6 +206,13 @@ def scrape_node(state: AgentState) -> AgentState:
     raw_results = query_overpass(bbox, category)
     total_osm_elements = len(raw_results.get("elements", []))
     prospects = normalize_osm_results(raw_results, postal_code)
+
+    has_email_filter = state.get("has_email")
+    has_website_filter = state.get("has_website")
+    if has_email_filter is not None:
+        prospects = [p for p in prospects if bool(p.get("email")) == has_email_filter]
+    if has_website_filter is not None:
+        prospects = [p for p in prospects if bool(p.get("website")) == has_website_filter]
 
     prospects_enrichis = []
     deep_scrape_count = 0
@@ -266,7 +285,13 @@ def _build_db_filter(state: AgentState) -> dict:
     if state.get("city"):
         conditions.append({"address.city": {"$regex": state["city"], "$options": "i"}})
     if state.get("category"):
-        conditions.append({"category": state["category"]})
+        group_labels = category_search_key_to_group(state["category"])
+        if group_labels:
+            conditions.append({"category": {"$in": group_labels}})
+        else:
+            # Catégorie inconnue de CATEGORY_TAGS : on retombe sur une comparaison
+            # souple au cas où l'utilisateur a tapé directement un libellé groupé.
+            conditions.append({"category": {"$regex": state["category"], "$options": "i"}})
     if state.get("company_name"):
         conditions.append({"name": {"$regex": state["company_name"], "$options": "i"}})
     if state.get("search"):
@@ -287,6 +312,18 @@ def _build_db_filter(state: AgentState) -> dict:
         if score_max is not None:
             range_query["$lte"] = score_max
         conditions.append({"score": range_query})
+
+    has_email = state.get("has_email")
+    if has_email is True:
+        conditions.append({"email": {"$nin": [None, ""]}})
+    elif has_email is False:
+        conditions.append({"$or": [{"email": None}, {"email": ""}, {"email": {"$exists": False}}]})
+
+    has_website = state.get("has_website")
+    if has_website is True:
+        conditions.append({"website": {"$nin": [None, ""]}})
+    elif has_website is False:
+        conditions.append({"$or": [{"website": None}, {"website": ""}, {"website": {"$exists": False}}]})
 
     if conditions:
         filter_query["$and"] = conditions
@@ -345,6 +382,34 @@ def best_prospects_node(state: AgentState) -> AgentState:
     collection = db["prospects"]
 
     filter_query = _build_db_filter(state)
+    rank = _parse_int(state.get("rank"))
+
+    if rank is not None and rank > 0:
+        cursor = collection.find(filter_query).sort({"score": -1}).skip(rank - 1).limit(1)
+        results = list(cursor)
+        total = collection.count_documents(filter_query)
+        results = mongo_to_json_safe(results)
+        state["prospects_sample"] = results
+        state["scraped_count"] = total
+
+        if not results:
+            state["response"] = (
+                f"Il n'y a pas de prospect au rang {rank} — seulement {total} prospect(s) au total "
+                f"correspondent à vos critères."
+            )
+            state["suggested_actions"] = ["Voir les meilleurs prospects", "Essayer un autre filtre"]
+        else:
+            top = results[0]
+            nom = top.get("name") or "Entreprise sans nom"
+            ville = (top.get("address") or {}).get("city") or (top.get("address") or {}).get("postcode") or ""
+            lieu = f" à {ville}" if ville else ""
+            state["response"] = (
+                f"🏆 Le {rank}ème meilleur prospect est **{nom}**{lieu} "
+                f"(score {top.get('score', '?')}). Total correspondant : {total}."
+            )
+            state["suggested_actions"] = ["Voir le rapport d'un prospect", "Compter les prospects restants"]
+        return state
+
     limit = _parse_int(state.get("limit"), default=10)
 
     cursor = collection.find(filter_query).sort({"score": -1}).limit(limit)
@@ -363,10 +428,21 @@ def best_prospects_node(state: AgentState) -> AgentState:
         )
         state["suggested_actions"] = ["Trouve des prospects à Bruxelles", "Cherche les meilleurs prospects d'un secteur"]
     else:
-        state["response"] = (
-            f"🏆 Voici les {len(results)} meilleurs prospects { 'pour vos critères' if state.get('category') or state.get('postal_code') or state.get('search') else ''}. "
-            f"Total correspondant : {total}."
-        )
+        criteres = " pour vos critères" if state.get("category") or state.get("postal_code") or state.get("search") else ""
+        if len(results) == 1:
+            top = results[0]
+            nom = top.get("name") or "Entreprise sans nom"
+            ville = (top.get("address") or {}).get("city") or (top.get("address") or {}).get("postcode") or ""
+            lieu = f" à {ville}" if ville else ""
+            state["response"] = (
+                f"🏆 Le meilleur prospect{criteres} est **{nom}**{lieu} "
+                f"(score {top.get('score', '?')}). Total correspondant : {total}."
+            )
+        else:
+            state["response"] = (
+                f"🏆 Voici les {len(results)} meilleurs prospects{criteres}. "
+                f"Total correspondant : {total}."
+            )
         state["suggested_actions"] = ["Voir le rapport d'un prospect", "Compter les prospects restants"]
 
     return state
@@ -419,6 +495,14 @@ def delete_prospects_node(state: AgentState) -> AgentState:
     if total == 0:
         state["response"] = "Aucun prospect ne correspond aux critères de suppression indiqués."
         state["suggested_actions"] = ["Affiche les prospects correspondants", "Essaye un autre filtre"]
+        return state
+
+    if not state.get("delete_confirm"):
+        state["response"] = (
+            f"⚠️ Cette action va supprimer **{total} prospect(s)** correspondant à vos critères "
+            f"(action irréversible). Répondez 'oui, confirme la suppression' pour valider."
+        )
+        state["suggested_actions"] = ["Oui, confirme la suppression", "Annuler"]
         return state
 
     result = collection.delete_many(filter_query)
@@ -527,6 +611,31 @@ def generate_report_node(state: AgentState) -> AgentState:
         f"• **Analyse** : {analysis.get('analyse')}\n\n"
         f"💡 *Données consolidées avec {len(web_results)} source(s) externes du Web.*"
     )
+    state["suggested_actions"] = []
+    return state
+
+
+def delete_all_prospects_node(state: AgentState) -> AgentState:
+    """
+    Suppression de TOUTE la base de prospects. Action irréversible et à haut risque :
+    nécessite une confirmation explicite de l'utilisateur AVANT toute suppression réelle.
+    """
+    db = get_db()
+    collection = db["prospects"]
+
+    if not state.get("delete_all_confirm"):
+        total = collection.count_documents({})
+        state["response"] = (
+            f"⚠️ Vous êtes sur le point de supprimer **TOUTE la base de prospects** ({total} prospect(s), "
+            f"action irréversible). Répondez explicitement 'oui, supprime tout' pour confirmer."
+        )
+        state["suggested_actions"] = ["Oui, supprime tout", "Annuler"]
+        return state
+
+    result = collection.delete_many({})
+    state["prospects_sample"] = []
+    state["scraped_count"] = result.deleted_count
+    state["response"] = f"🗑️ Toute la base a été supprimée : {result.deleted_count} prospect(s) effacé(s)."
     state["suggested_actions"] = []
     return state
 
