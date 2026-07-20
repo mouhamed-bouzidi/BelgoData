@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
@@ -134,6 +135,7 @@ export default function AgentPage() {
   }
 
   const { user, token } = useAuth();
+  const avatarUrl = user?.avatarUrl;
   const canChat = user?.role !== "Viewer";
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -148,10 +150,7 @@ export default function AgentPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const userName = user?.name || "Utilisateur";
-  const [greeting] = useState(() => {
-    const hour = new Date().getHours();
-    return hour >= 18 ? "Bonsoir" : "Bonjour";
-  });
+  const greeting = "Bonjour";
 
   const getAuthConfig = useCallback(() => {
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
@@ -365,7 +364,34 @@ export default function AgentPage() {
         setActiveReport(null);
       }
 
-      await saveConversation(finalMessages);
+      let activeConvId = conversationId;
+      if (!activeConvId && token) {
+        try {
+          const title = `Conversation IA - ${new Date().toLocaleDateString("fr-FR")}`;
+          const createRes = await axios.post(
+            `${API_URL}/api/conversations`,
+            { title, messages: [] },
+            getAuthConfig()
+          );
+          activeConvId = createRes.data._id;
+          setConversationId(activeConvId);
+          setConversations((prev) => [createRes.data, ...prev]);
+        } catch (err) {
+          console.error("Erreur création conversation:", err);
+        }
+      }
+
+      if (activeConvId) {
+        try {
+          await axios.put(
+            `${API_URL}/api/conversations/${activeConvId}`,
+            { messages: finalMessages },
+            getAuthConfig()
+          );
+        } catch (err) {
+          console.error("Erreur sauvegarde conversation :", err);
+        }
+      }
     } catch (error) {
       console.error("Erreur agent:", error);
       setMessages((prev) => [
@@ -387,22 +413,39 @@ export default function AgentPage() {
     sendMessage(input);
   }
 
-  function resetConversation() {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("agent_chat_history");
-    }
-    setMessages([
-      {
-        role: "agent",
-        content: defaultMessageContent,
-        suggestedActions: defaultActions,
-        timestamp: nowTime(),
-      },
-    ]);
-    setActiveReport(null);
-    setActiveScrapingResult(null);
-    setLastScraping(null);
+  async function resetConversation() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("agent_chat_history");
   }
+
+  const initialMessage: Message = {
+    role: "agent",
+    content: defaultMessageContent,
+    suggestedActions: defaultActions,
+    timestamp: nowTime(),
+  };
+
+  setMessages([initialMessage]);
+  setActiveReport(null);
+  setActiveScrapingResult(null);
+  setLastScraping(null);
+
+  // ✅ Crée une vraie nouvelle conversation en base
+  if (token) {
+    try {
+      const title = `Conversation IA - ${new Date().toLocaleDateString("fr-FR")}`;
+      const res = await axios.post(
+        `${API_URL}/api/conversations`,
+        { title, messages: [initialMessage] },
+        getAuthConfig()
+      );
+      setConversationId(res.data._id);
+      setConversations((prev) => [res.data, ...prev]); // ajoute en tête de liste
+    } catch (err) {
+      console.error("Erreur création nouvelle conversation:", err);
+    }
+  }
+}
 
   const lastMessage = messages[messages.length - 1];
   const currentSuggestions = lastMessage?.role === "agent" ? lastMessage.suggestedActions : [];
@@ -441,11 +484,8 @@ export default function AgentPage() {
       {/* HEADER */}
       <header className="relative z-10 px-6 md:px-10 py-5 flex items-center justify-between shrink-0 border-b border-stone-200/60 backdrop-blur-md bg-white/40">
         <div className="flex items-center gap-4">
-          <div className="relative">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-700 via-violet-800 to-purple-900 flex items-center justify-center shadow-lg shadow-violet-900/20 ring-1 ring-violet-950/10">
-              <Bot size={20} className="text-violet-50" />
-            </div>
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-violet-400 ring-2 ring-white animate-pulse" />
+          <div className="w-11 h-11 rounded-2xl overflow-hidden border border-violet-200/70 bg-violet-700 shadow-lg shadow-violet-900/10 ring-1 ring-white/70 flex items-center justify-center">
+            <Bot size={22} className="text-white" />
           </div>
           <div>
             <h1 className="text-[15px] font-semibold tracking-tight text-stone-800 flex items-center gap-2">
@@ -587,8 +627,14 @@ export default function AgentPage() {
                 </div>
 
                 {msg.role === "user" && (
-                  <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-stone-100 to-stone-200 text-stone-600 flex items-center justify-center border border-stone-300/60 shadow-sm shrink-0 mt-0.5">
-                    <User size={15} />
+                  <div className="w-9 h-9 rounded-2xl overflow-hidden border border-stone-300/60 shadow-sm shrink-0 mt-0.5 relative bg-stone-100">
+                    {avatarUrl ? (
+                      <Image src={avatarUrl} alt="Avatar utilisateur" fill sizes="32px" className="object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-stone-100 to-stone-200 flex items-center justify-center text-stone-600 text-[10px] font-bold">
+                        {user?.name?.slice(0, 2).toUpperCase() || "?"}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

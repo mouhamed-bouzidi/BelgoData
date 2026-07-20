@@ -74,10 +74,16 @@ def classify_intent_node(state: AgentState) -> AgentState:
 
     prompt_system = f"""Tu es l'ingénieur en chef de l'analyse d'intentions de BelgoData.
 Tu dois analyser la requête de l'utilisateur et retourner UNIQUEMENT un JSON avec ces champs :
-- intent: "scrape" | "list" | "report" | "general"
+- intent: "scrape" | "search" | "list" | "best" | "count" | "delete" | "report" | "general" | "clarify"
 - location: code postal belge (4 chiffres) OU nom de ville belge, sinon null
+- city: nom de la ville extraite si disponible, sinon null
 - category: une des catégories valides répertoriées ci-dessous, sinon null
 - company_name: nom de l'entreprise si intent=report, sinon null
+- search: terme libre de recherche pour la base ou la suppression, sinon null
+- limit: nombre maximum d'éléments demandés, sinon null
+- score_min: filtre sur le score minimum, sinon null
+- score_max: filtre sur le score maximum, sinon null
+- delete_confirm: true si l'utilisateur confirme expressément une suppression, sinon false ou null
 
 RÈGLES CRITIQUES DE MAPPING POUR LES MÉTIERS ET L'ARTISANAT :
 - Si l'utilisateur mentionne un artisan du bâtiment ('plombier', 'chauffagiste', 'electricien', 'menuisier'), associe-le STRICTEMENT à sa clé respective.
@@ -100,7 +106,11 @@ Catégories valides autorisées : [{categories_disponibles}]
 
 RÈGLES D'INTENTION :
 - "scrape" = l'utilisateur veut TROUVER, CHERCHER, PROSPECTER, RECHERCHER de nouvelles structures (ex: "plombier a namur", "trouve des bureaux à 2000", "cherche des électriciens")
-- "list" = l'utilisateur veut VOIR, MONTRER, LISTER des prospects existant déjà en base locale (ex: "montre-moi les plombiers de ma base")
+- "search" = l'utilisateur veut rechercher dans la base de prospects existante, souvent avec des critères ou un terme (ex: "recherche des restaurants à 1000", "trouve mes prospects de Namur")
+- "list" = l'utilisateur veut VOIR ou LISTER des prospects existants en base (ex: "montre-moi les plombiers de ma base")
+- "best" = l'utilisateur veut voir les meilleurs prospects ou les plus hauts scores (ex: "montre-moi les meilleurs prospects", "top prospects score")
+- "count" = l'utilisateur veut connaître le nombre de prospects correspondant à un filtre (ex: "combien de prospects à Namur", "nombre de restaurants")
+- "delete" = l'utilisateur veut supprimer des prospects existants selon des critères (ex: "supprime les prospects de 1000", "efface les prospects sans email")
 - "report" = l'utilisateur veut un BILAN, ANALYSE, RAPPORT sur une entreprise précise (ex: "fait un bilan sur l'entreprise X")
 - "general" = tout le reste (salutations, questions générales, météo)
 
@@ -136,6 +146,12 @@ Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
         state["category"] = intention_validee.category
         state["company_name"] = intention_validee.company_name
         state["postal_code"] = intention_validee.location
+        state["city"] = intention_validee.city
+        state["search"] = intention_validee.search
+        state["limit"] = intention_validee.limit
+        state["score_min"] = intention_validee.score_min
+        state["score_max"] = intention_validee.score_max
+        state["delete_confirm"] = intention_validee.delete_confirm
 
     except Exception as e:
         logger.error(f"⚠️ Erreur lors de l'extraction de l'intention : {e}")
@@ -232,44 +248,186 @@ def scrape_node(state: AgentState) -> AgentState:
     return state
 
 
-def list_prospects_node(state: AgentState) -> AgentState:
+def _parse_int(value, default=None):
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _build_db_filter(state: AgentState) -> dict:
+    filter_query = {}
+    conditions = []
+
+    if state.get("postal_code"):
+        conditions.append({"address.postcode": state["postal_code"]})
+    if state.get("city"):
+        conditions.append({"address.city": {"$regex": state["city"], "$options": "i"}})
+    if state.get("category"):
+        conditions.append({"category": state["category"]})
+    if state.get("company_name"):
+        conditions.append({"name": {"$regex": state["company_name"], "$options": "i"}})
+    if state.get("search"):
+        conditions.append({
+            "$or": [
+                {"name": {"$regex": state["search"], "$options": "i"}},
+                {"address.city": {"$regex": state["search"], "$options": "i"}},
+                {"category": {"$regex": state["search"], "$options": "i"}},
+            ]
+        })
+
+    score_min = _parse_int(state.get("score_min"))
+    score_max = _parse_int(state.get("score_max"))
+    if score_min is not None or score_max is not None:
+        range_query = {}
+        if score_min is not None:
+            range_query["$gte"] = score_min
+        if score_max is not None:
+            range_query["$lte"] = score_max
+        conditions.append({"score": range_query})
+
+    if conditions:
+        filter_query["$and"] = conditions
+
+    return filter_query
+
+
+def search_prospects_node(state: AgentState) -> AgentState:
     """
-    Récupère et liste les prospects actuellement stockés dans MongoDB selon les filtres.
+    Recherche et affiche les prospects stockés en base selon les critères extraits.
     """
     db = get_db()
     collection = db["prospects"]
 
-    filter_query = {}
-    location_desc = []
-    
-    if state.get("postal_code"):
-        filter_query["address.postcode"] = state["postal_code"]
-        location_desc.append(f"à {state['postal_code']}")
-    if state.get("category"):
-        filter_query["category"] = state["category"]
-        location_desc.append(f"dans le secteur '{state['category']}'")
+    filter_query = _build_db_filter(state)
+    limit = _parse_int(state.get("limit"), default=10)
 
-    results = list(collection.find(filter_query).limit(10))
+    results = list(collection.find(filter_query).limit(limit).sort({"createdAt": -1}))
     total = collection.count_documents(filter_query)
 
     results = mongo_to_json_safe(results)
 
     state["prospects_sample"] = results
     state["scraped_count"] = total
-    
-    location_text = " ".join(location_desc) if location_desc else "au total global"
+
     if total == 0:
         state["response"] = (
-            f"Aucun prospect n'est actuellement enregistré en base de données {location_text}. "
-            f"Souhaitez-vous lancer une extraction de données automatique ?"
+            "Aucun prospect ne correspond à votre recherche en base de données. "
+            "Vous pouvez essayer un autre critère ou lancer une prospection OSM."
         )
         state["suggested_actions"] = [
-            f"Scraper {state.get('category', 'des entreprises')} à {state.get('postal_code', '1000')}"
+            "Trouve des prospects à Namur",
+            "Cherche les meilleurs prospects"
         ]
     else:
-        state["response"] = f"📋 Affichage de {len(results)}/{total} prospects trouvés en base {location_text}."
+        criteria_text = []
+        if state.get("postal_code"):
+            criteria_text.append(f"à {state['postal_code']}")
+        if state.get("category"):
+            criteria_text.append(f"dans le secteur '{state['category']}'")
+        if state.get("search"):
+            criteria_text.append(f"pour '{state['search']}'")
+
+        criteria_label = " ".join(criteria_text) if criteria_text else ""
+        state["response"] = f"📋 {total} prospect(s) trouvé(s) {criteria_label}. Affichage des {len(results)} premiers résultats."
         state["suggested_actions"] = ["Exporter les résultats en CSV", "Affiner la recherche"]
-    
+
+    return state
+
+
+def best_prospects_node(state: AgentState) -> AgentState:
+    """
+    Retourne les meilleurs prospects par score dans la base.
+    """
+    db = get_db()
+    collection = db["prospects"]
+
+    filter_query = _build_db_filter(state)
+    limit = _parse_int(state.get("limit"), default=10)
+
+    cursor = collection.find(filter_query).sort({"score": -1}).limit(limit)
+    results = list(cursor)
+    total = collection.count_documents(filter_query)
+
+    results = mongo_to_json_safe(results)
+
+    state["prospects_sample"] = results
+    state["scraped_count"] = total
+
+    if total == 0:
+        state["response"] = (
+            "Aucun prospect de score disponible ne correspond à vos critères. "
+            "Essayez un filtre plus large ou lancez une nouvelle prospection."
+        )
+        state["suggested_actions"] = ["Trouve des prospects à Bruxelles", "Cherche les meilleurs prospects d'un secteur"]
+    else:
+        state["response"] = (
+            f"🏆 Voici les {len(results)} meilleurs prospects { 'pour vos critères' if state.get('category') or state.get('postal_code') or state.get('search') else ''}. "
+            f"Total correspondant : {total}."
+        )
+        state["suggested_actions"] = ["Voir le rapport d'un prospect", "Compter les prospects restants"]
+
+    return state
+
+
+def count_prospects_node(state: AgentState) -> AgentState:
+    """
+    Compte le nombre de prospects correspondant aux critères fournis.
+    """
+    db = get_db()
+    collection = db["prospects"]
+
+    filter_query = _build_db_filter(state)
+    total = collection.count_documents(filter_query)
+
+    state["prospects_sample"] = []
+    state["scraped_count"] = total
+
+    criteria_text = []
+    if state.get("postal_code"):
+        criteria_text.append(f"à {state['postal_code']}")
+    if state.get("category"):
+        criteria_text.append(f"dans le secteur '{state['category']}'")
+    if state.get("search"):
+        criteria_text.append(f"pour '{state['search']}'")
+
+    criteria_label = " ".join(criteria_text) if criteria_text else ""
+    state["response"] = f"🔢 Il y a {total} prospect(s) {criteria_label}."
+    state["suggested_actions"] = ["Afficher les prospects", "Trouver les meilleurs prospects"]
+    return state
+
+
+def delete_prospects_node(state: AgentState) -> AgentState:
+    """
+    Supprime des prospects en base selon des critères de recherche sécurisés.
+    """
+    db = get_db()
+    collection = db["prospects"]
+
+    filter_query = _build_db_filter(state)
+    if not filter_query:
+        state["response"] = (
+            "Je dois avoir des critères précis avant de supprimer des prospects. "
+            "Par exemple : 'Supprime les prospects de 1000' ou 'Efface les prospects de construction à Namur'."
+        )
+        state["suggested_actions"] = ["Supprime les prospects de ma ville", "Supprime les prospects sans email"]
+        return state
+
+    total = collection.count_documents(filter_query)
+    if total == 0:
+        state["response"] = "Aucun prospect ne correspond aux critères de suppression indiqués."
+        state["suggested_actions"] = ["Affiche les prospects correspondants", "Essaye un autre filtre"]
+        return state
+
+    result = collection.delete_many(filter_query)
+    state["prospects_sample"] = []
+    state["scraped_count"] = result.deleted_count
+    state["response"] = (
+        f"🗑️ Suppression effectuée : {result.deleted_count} prospect(s) supprimé(s) de la base."
+    )
+    state["suggested_actions"] = ["Compter les prospects restants", "Trouver les meilleurs prospects"]
     return state
 
 

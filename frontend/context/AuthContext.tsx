@@ -23,17 +23,32 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:5000";
 
+axios.defaults.baseURL = API_URL;
+axios.defaults.withCredentials = false;
 
-function setAuthCookie(tokenValue: string | null) {
+function clearLegacyAuthCookies() {
   if (typeof document === "undefined") return;
+  document.cookie = "belgodata_token=; path=/; max-age=0; SameSite=Lax";
+  document.cookie = "belgodata_user=; path=/; max-age=0; SameSite=Lax";
+}
 
-  if (tokenValue) {
-    document.cookie = `belgodata_token=${tokenValue}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`;
+function setAuthTokenCookie(token: string | null) {
+  if (typeof document === "undefined") return;
+  if (token) {
+    document.cookie = `belgodata_token=${token}; path=/; max-age=${7 * 24 * 3600}; SameSite=Lax`;
   } else {
-    document.cookie = "belgodata_token=; path=/; max-age=0";
+    document.cookie = "belgodata_token=; path=/; max-age=0; SameSite=Lax";
   }
+}
+
+function isTokenSafe(token: string | null): boolean {
+  return typeof token === "string" && token.length < 4096;
+}
+
+function isSavedUserSafe(rawUser: string | null): boolean {
+  return typeof rawUser === "string" && rawUser.length < 12000;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -42,20 +57,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    clearLegacyAuthCookies();
 
     const savedToken = localStorage.getItem("belgodata_token");
     const savedUser = localStorage.getItem("belgodata_user");
 
-    if (savedToken) {
+    if (isTokenSafe(savedToken)) {
       setToken(savedToken);
       axios.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
+      setAuthTokenCookie(savedToken);
+    } else {
+      localStorage.removeItem("belgodata_token");
+      localStorage.removeItem("belgodata_user");
     }
-    if (savedUser) {
+
+    if (savedUser && isSavedUserSafe(savedUser)) {
       try {
-        setUser(JSON.parse(savedUser));
+        setUser(JSON.parse(savedUser) as User);
       } catch (error) {
         console.error("Impossible de parser l'utilisateur stocké", error);
+        localStorage.removeItem("belgodata_user");
       }
     }
   }, []);
@@ -63,21 +84,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+      axios.get("/api/auth/me")
+        .then((res) => {
+          const backendUser = res.data;
+          const normalizedUser: User = getSafeUser({
+            id: backendUser._id || backendUser.id,
+            name: backendUser.name,
+            email: backendUser.email,
+            role: backendUser.role,
+            phone: backendUser.phone,
+          });
+          setUser(normalizedUser);
+          if (isSavedUserSafe(JSON.stringify(normalizedUser))) {
+            localStorage.setItem("belgodata_user", JSON.stringify(normalizedUser));
+          }
+        })
+        .catch((error) => {
+          console.error("Impossible de charger l'utilisateur depuis l'API", error);
+        });
     } else {
       delete axios.defaults.headers.common["Authorization"];
     }
   }, [token]);
+
+  function getSafeUser(user: Partial<User>) {
+    return {
+      id: user.id || "",
+      name: user.name || "",
+      email: user.email || "",
+      role: user.role || "",
+      phone: user.phone || "",
+    } as User;
+  }
 
   async function login(email: string, password: string) {
     setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/api/auth/login`, { email, password });
       const { token: t, user: u } = res.data;
+      const safeUser = getSafeUser(u);
       setToken(t);
-      setUser(u);
-      setAuthCookie(t);
-      localStorage.setItem("belgodata_token", t);
-      localStorage.setItem("belgodata_user", JSON.stringify(u));
+      setUser(safeUser);
+      if (isTokenSafe(t)) {
+        localStorage.setItem("belgodata_token", t);
+        setAuthTokenCookie(t);
+      }
+      if (isSavedUserSafe(JSON.stringify(safeUser))) {
+        localStorage.setItem("belgodata_user", JSON.stringify(safeUser));
+      }
       axios.defaults.headers.common["Authorization"] = `Bearer ${t}`;
     } finally {
       setLoading(false);
@@ -89,11 +144,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await axios.post(`${API_URL}/api/auth/signup`, { name, email, phone, password });
       const { token: t, user: u } = res.data;
+      const safeUser = getSafeUser(u);
       setToken(t);
-      setUser(u);
-      setAuthCookie(t);
-      localStorage.setItem("belgodata_token", t);
-      localStorage.setItem("belgodata_user", JSON.stringify(u));
+      setUser(safeUser);
+      if (isTokenSafe(t)) {
+        localStorage.setItem("belgodata_token", t);
+        setAuthTokenCookie(t);
+      }
+      if (isSavedUserSafe(JSON.stringify(safeUser))) {
+        localStorage.setItem("belgodata_user", JSON.stringify(safeUser));
+      }
       axios.defaults.headers.common["Authorization"] = `Bearer ${t}`;
     } finally {
       setLoading(false);
@@ -103,7 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function logout() {
     setToken(null);
     setUser(null);
-    setAuthCookie(null);
+    clearLegacyAuthCookies();
     localStorage.removeItem("belgodata_token");
     localStorage.removeItem("belgodata_user");
     delete axios.defaults.headers.common["Authorization"];

@@ -4,16 +4,17 @@ const router = express.Router();
 const Conversation = require("../models/Conversation");
 const authMiddleware = require("../middleware/auth");
 
-// GET /api/conversations - liste des conversations de l'utilisateur connecté
+// GET /api/conversations
 router.get("/", authMiddleware, async (req, res) => {
   try {
     const conversations = await Conversation.find({ userId: req.user.id })
-      .sort({ updatedAt: -1 })
-      .lean();
+      .sort({ updatedAt: -1 })   // plus récentes en premier
+      .limit(20)                  // sécurité
+      .select("_id title updatedAt messages");  // pas besoin de tout charger
+
     res.json(conversations);
-  } catch (error) {
-    console.error("Erreur récupération conversations:", error);
-    res.status(500).json({ error: error.message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

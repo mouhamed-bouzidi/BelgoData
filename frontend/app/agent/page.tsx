@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
@@ -9,7 +10,6 @@ import {
   Sparkles, 
   Send, 
   RefreshCw, 
-  User, 
   Building2, 
   ExternalLink, 
   MapPin, 
@@ -77,6 +77,7 @@ export default function AgentPage() {
   }
 
   const { user, token } = useAuth();
+  const avatarUrl = user?.avatarUrl;
   const canChat = user ? user.role !== "Viewer" : false;
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -134,8 +135,32 @@ export default function AgentPage() {
         { messages: updatedMessages },
         getAuthConfig()
       );
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv._id === conversationId ? { ...conv, messages: updatedMessages } : conv
+        )
+      );
     } catch (error) {
       console.error("Erreur sauvegarde conversation :", error);
+    }
+  };
+
+  const createConversation = async () => {
+    if (!token) return null;
+    try {
+      const title = `Conversation IA - ${new Date().toLocaleDateString("fr-FR")}`;
+      const createRes = await axios.post(
+        `${API_URL}/api/conversations`,
+        { title, messages: [] },
+        getAuthConfig()
+      );
+      const newConversation: ConversationSummary = createRes.data;
+      setConversationId(newConversation._id);
+      setConversations((prev) => [newConversation, ...prev]);
+      return newConversation._id;
+    } catch (error) {
+      console.error("Erreur création conversation :", error);
+      return null;
     }
   };
 
@@ -281,10 +306,11 @@ export default function AgentPage() {
     sendMessage(input);
   }
 
-  function resetConversation() {
+  async function resetConversation() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("agent_chat_history");
     }
+    const newConversationId = await createConversation();
     setMessages([
       {
         role: "agent",
@@ -294,6 +320,9 @@ export default function AgentPage() {
       },
     ]);
     setActiveReport(null);
+    if (!newConversationId) {
+      setConversationId(null);
+    }
   }
 
   // Extrait les dernières actions suggérées du flux pour les afficher proprement en bas
@@ -305,16 +334,27 @@ export default function AgentPage() {
       
       {/* HEADER PRINCIPAL */}
       <header className="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-            <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
-              {greeting}, {userName}
-            </span>
-            <Sparkles size={20} className="text-indigo-500 animate-pulse" />
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
-          </p>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-2xl overflow-hidden border border-slate-200/80 bg-slate-100 shadow-sm shrink-0 relative">
+            {avatarUrl ? (
+              <Image src={avatarUrl} alt="Avatar utilisateur" fill sizes="44px" className="object-cover" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-700 text-sm font-bold">
+                {user?.name?.slice(0, 2).toUpperCase() || "?"}
+              </div>
+            )}
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+              <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
+                {greeting}, {userName}
+              </span>
+              <Sparkles size={20} className="text-indigo-500 animate-pulse" />
+            </h1>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -384,8 +424,14 @@ export default function AgentPage() {
 
                 {/* Avatar User */}
                 {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center border border-slate-200 shadow-sm shrink-0 mt-0.5">
-                    <User size={16} />
+                  <div className="w-8 h-8 rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 mt-0.5 relative bg-slate-100">
+                    {avatarUrl ? (
+                      <Image src={avatarUrl} alt="Avatar utilisateur" fill sizes="32px" className="object-cover" />
+                    ) : (
+                      <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-600 text-[10px] font-bold">
+                        {user?.name?.slice(0, 2).toUpperCase() || "?"}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

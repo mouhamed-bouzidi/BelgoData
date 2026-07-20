@@ -74,6 +74,8 @@ body {
   opacity: 0.85;
   transform: translate3d(0,0,0);
   mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: -1;
 }
 
 .auth-blob.b1 { width: 420px; height: 420px; left: -80px; top: -80px; background: #8b5cf6; animation: float 9s ease-in-out infinite; }

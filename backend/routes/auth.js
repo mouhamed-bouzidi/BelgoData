@@ -7,7 +7,12 @@ const authorizeRoles = require("../middleware/roleMiddleware");
 
 function generateToken(user) {
   return jwt.sign(
-    { id: user._id, name: user.name, email: user.email, role: user.role },
+    {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
   );
@@ -35,7 +40,13 @@ router.post("/signup", async (req, res) => {
     const token = generateToken(user);
     res.status(201).json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl || null,
+      },
     });
   } catch (error) {
     console.error("❌ Signup:", error);
@@ -66,7 +77,13 @@ router.post("/login", async (req, res) => {
     const token = generateToken(user);
     res.json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl || null,
+      },
     });
   } catch (error) {
     console.error("❌ Login:", error);

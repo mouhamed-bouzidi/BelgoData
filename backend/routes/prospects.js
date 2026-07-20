@@ -5,14 +5,16 @@ const { calculateGrowthRate } = require("../utils/prospectStats");
 const authMiddleware = require("../middleware/auth");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const buildProspectFilter = (query) => {
-  const { postal_code, category, source, search, email, score_min } = query;
+  const { postal_code, category, source, search, email, website, score_min, score_max, city } = query;
   const filter = {};
   const conditions = [];
 
   if (postal_code) conditions.push({ "address.postcode": postal_code });
+  if (city) conditions.push({ "address.city": { $regex: city, $options: "i" } });
   if (category) conditions.push({ category });
   if (source) conditions.push({ source: source.toLowerCase() });
   if (score_min) conditions.push({ score: { $gte: Number(score_min) } });
+  if (score_max) conditions.push({ score: { $lte: Number(score_max) } });
 
   if (email === "Disponible") {
     conditions.push({ email: { $regex: /\S/ } });
@@ -25,6 +27,31 @@ const buildProspectFilter = (query) => {
         { email: null },
         { email: "" },
         { email: { $regex: /^\s*$/ } },
+      ],
+    });
+  }
+
+  if (website === "Disponible") {
+    conditions.push({ website: { $regex: /\S/ } });
+  }
+
+  if (website === "Non disponible") {
+    conditions.push({
+      $or: [
+        { website: { $exists: false } },
+        { website: null },
+        { website: "" },
+        { website: { $regex: /^\s*$/ } },
+      ],
+    });
+  }
+
+  if (search) {
+    conditions.push({
+      $or: [
+        { name: { $regex: search, $options: "i" } },
+        { "address.city": { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
       ],
     });
   }
@@ -65,6 +92,45 @@ router.get("/",authMiddleware, async (req, res) => {
       limit: Number(limit),
       results: prospects,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/prospects/count - compte les prospects selon les mêmes filtres
+router.get("/count", authMiddleware, async (req, res) => {
+  try {
+    const filter = buildProspectFilter(req.query);
+    const total = await Prospect.countDocuments(filter);
+    res.json({ total });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/prospects/top - renvoie les prospects les mieux notés
+router.get("/top", authMiddleware, async (req, res) => {
+  try {
+    const { limit = 10 } = req.query;
+    const filter = buildProspectFilter(req.query);
+    const prospects = await Prospect.find(filter).sort({ score: -1 }).limit(Number(limit));
+    res.json({ results: prospects });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/prospects/bulk-delete - suppression sécurisée par filtre
+router.post("/bulk-delete", authMiddleware, authorizeRoles("Administrateur", "Commercial"), async (req, res) => {
+  try {
+    const { filter = {}, confirm = false } = req.body;
+    if (!confirm) {
+      const total = await Prospect.countDocuments(filter);
+      return res.json({ confirmRequired: true, total, message: "Confirmation requise avant suppression." });
+    }
+
+    const result = await Prospect.deleteMany(filter);
+    res.json({ deletedCount: result.deletedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
