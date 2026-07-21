@@ -2,8 +2,13 @@ import os
 import json
 import logging
 import re
-from datetime import datetime, timezone
+import hashlib
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 from groq import Groq
+from bson import ObjectId
+from bson.errors import InvalidId
 
 from agent.state import AgentState, ExtractionIntention
 from services.geocoding import get_bbox_from_location
@@ -17,6 +22,16 @@ logger = logging.getLogger(__name__)
 
 # Initialisation du client Groq
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# =====================================================================
+# SÉCURITÉ SUPPRESSION : constantes
+# =====================================================================
+# Durée de validité d'une confirmation de suppression avant expiration.
+DELETE_CONFIRMATION_TTL_SECONDS = 180
+
+# Aucune limite de volume pour une suppression via le chat : la confirmation
+# explicite obligatoire (voir _create/_consume_pending_confirmation) reste la
+# seule protection, quelle que soit la taille du lot concerné.
 
 # =====================================================================
 # PROMPTS DE L'AGENT
@@ -60,6 +75,115 @@ Si les informations web sont vides ou non pertinentes, base-toi uniquement sur l
 # NŒUDS DE L'AGENT LANGGRAPH
 # =====================================================================
 
+DELETE_VERBS = ("supprime", "supprimer", "efface", "effacer", "retire", "retirer", "enlève", "enleve", "nettoie", "nettoyer", "elimine", "élimine")
+
+BELGIAN_CITY_TO_POSTCODE = {
+    "anvers": "2000", "antwerpen": "2000", "antwerp": "2000",
+    "bruxelles": "1000", "brussels": "1000", "brussel": "1000",
+    "gand": "9000", "gent": "9000", "ghent": "9000",
+    "liege": "4000", "liège": "4000", "luik": "4000",
+    "namur": "5000",
+    "bruges": "8000", "brugge": "8000",
+    "louvain": "3000", "leuven": "3000",
+    "mons": "7000",
+    "charleroi": "6000",
+    "kessel-lo": "3010",
+}
+
+# Synonymes -> clé CATEGORY_TAGS canonique, pour reconnaître une catégorie
+# même avec des variantes d'accent/orthographe courantes côté utilisateur.
+CATEGORY_SYNONYMS = {
+    "café": "cafe", "cafés": "cafe", "cafes": "cafe",
+    "resto": "restaurant", "restos": "restaurant", "restaurants": "restaurant",
+    "boulangeries": "boulangerie",
+    "plombiers": "plombier", "chauffagiste": "plombier", "chauffagistes": "plombier",
+    "electriciens": "electricien", "électricien": "electricien", "électriciens": "electricien",
+    "menuisier": "menuiserie", "menuisiers": "menuiserie", "charpentier": "menuiserie",
+    "entrepreneur": "construction", "entrepreneurs": "construction", "batiment": "construction", "bâtiment": "construction", "renovation": "construction", "rénovation": "construction",
+    "artisan": "artisanat", "artisans": "artisanat",
+}
+
+
+def _rule_based_delete_extraction(raw_query: str) -> Optional[dict]:
+    """
+    Détecte et extrait de façon 100% déterministe (regex/mots-clés, sans LLM)
+    les critères d'une demande de suppression. Utilisé en remplacement de la
+    classification LLM pour cette action précise : la suppression est
+    l'action la plus critique de l'agent, elle ne doit jamais dépendre de la
+    fiabilité (imparfaite) d'un modèle gratuit en mode "structured output".
+
+    Retourne None si aucun verbe de suppression n'est détecté (le message
+    n'est alors pas concerné, la classification LLM classique reprend la main).
+    """
+    q = raw_query.lower()
+
+    is_confirmation_reply = bool(re.search(r"\boui\b.*\bconfirme\b|\bje confirme\b", q))
+    if not any(re.search(rf"\b{v}\b", q) for v in DELETE_VERBS) and not is_confirmation_reply:
+        return None
+
+    result = {
+        "intent": "delete",
+        "category": None,
+        "location": None,
+        "has_email": None,
+        "has_website": None,
+        "delete_confirm": None,
+        "delete_all_confirm": None,
+    }
+
+    # --- Confirmations explicites ---
+    if re.search(r"\boui\b.*\bconfirme\b.*\btout\b|\bconfirme\b.*\btout\b.*\bsupprim", q) or "oui, supprime tout" in q or "oui supprime tout" in q:
+        result["delete_all_confirm"] = True
+        result["delete_confirm"] = True
+    elif re.search(r"\boui\b.*\bconfirme\b|\bje confirme\b", q):
+        result["delete_confirm"] = True
+
+    # --- Code postal (4 chiffres) ---
+    postcode_match = re.search(r"\b(\d{4})\b", q)
+    if postcode_match:
+        result["location"] = postcode_match.group(1)
+    else:
+        for city, postcode in BELGIAN_CITY_TO_POSTCODE.items():
+            if re.search(rf"\b{re.escape(city)}\b", q):
+                result["location"] = postcode
+                break
+
+    # --- Catégorie ---
+    for key in CATEGORY_TAGS.keys():
+        if re.search(rf"\b{re.escape(key)}s?\b", q):
+            result["category"] = key
+            break
+    if result["category"] is None:
+        for synonym, canonical in CATEGORY_SYNONYMS.items():
+            if re.search(rf"\b{re.escape(synonym)}\b", q):
+                result["category"] = canonical
+                break
+
+    # --- has_email ---
+    if re.search(r"sans (adresse )?e?-?mail|pas d[e']\s*e?-?mail|n'ont pas de mail|n'ont pas d'email|aucun email|aucun mail", q):
+        result["has_email"] = False
+    elif re.search(r"(qui ont|avec|ayant) (un |une adresse )?e?-?mail", q):
+        result["has_email"] = True
+
+    # --- has_website ---
+    if re.search(r"sans site ?(web|internet)?|pas de site ?(web|internet)?|n'ont pas de site", q):
+        result["has_website"] = False
+    elif re.search(r"(qui ont|avec|ayant) (un )?site ?(web|internet)?", q):
+        result["has_website"] = True
+
+    # --- delete_all : "tous les prospects"/"toute la base" SANS aucun autre filtre ---
+    no_other_filter = (
+        result["category"] is None
+        and result["location"] is None
+        and result["has_email"] is None
+        and result["has_website"] is None
+    )
+    if no_other_filter and re.search(r"tout(e)?s? la base|tous les prospects\b(?!.*(de type|de la cat|à|a\s+\d))", q):
+        result["intent"] = "delete_all"
+
+    return result
+
+
 def classify_intent_node(state: AgentState) -> AgentState:
     """
     Nœud critique d'analyse d'intention via Groq avec Structured Output.
@@ -71,6 +195,31 @@ def classify_intent_node(state: AgentState) -> AgentState:
     clean_query = state["user_query"].lower()
     clean_query = re.sub(r'\banamur\b', 'namur', clean_query)
     clean_query = re.sub(r'\bantoine\b', 'anvers', clean_query)
+
+    # -----------------------------------------------------------------
+    # PRIORITÉ ABSOLUE : suppression = parseur déterministe, pas de LLM.
+    # La suppression est l'action la plus critique de l'agent ; elle ne
+    # doit jamais dépendre de la fiabilité (parfois imparfaite) d'un LLM
+    # en mode "structured output" gratuit. Toute présence d'un verbe de
+    # suppression court-circuite complètement l'appel au modèle.
+    # -----------------------------------------------------------------
+    rule_based = _rule_based_delete_extraction(clean_query)
+    if rule_based is not None:
+        state["intent"] = rule_based["intent"]
+        state["category"] = rule_based["category"]
+        state["postal_code"] = rule_based["location"]
+        state["city"] = None
+        state["company_name"] = None
+        state["search"] = None
+        state["limit"] = None
+        state["score_min"] = None
+        state["score_max"] = None
+        state["rank"] = None
+        state["has_email"] = rule_based["has_email"]
+        state["has_website"] = rule_based["has_website"]
+        state["delete_confirm"] = rule_based["delete_confirm"]
+        state["delete_all_confirm"] = rule_based["delete_all_confirm"]
+        return state
 
     prompt_system = f"""Tu es l'ingénieur en chef de l'analyse d'intentions de BelgoData.
 Tu dois analyser la requête de l'utilisateur et retourner UNIQUEMENT un JSON avec ces champs :
@@ -117,7 +266,9 @@ RÈGLES D'INTENTION (CRITIQUE - LIRE ATTENTIVEMENT POUR ÉVITER LA CONFUSION) :
 - "list" = l'utilisateur veut VOIR ou LISTER des prospects existants en base (ex: "montre-moi les plombiers de ma base")
 - "best" = l'utilisateur veut voir les meilleurs prospects ou les plus hauts scores (ex: "montre-moi les meilleurs prospects", "top prospects score")
 - "count" = l'utilisateur veut connaître le nombre de prospects correspondant à un filtre (ex: "combien de prospects à Namur", "nombre de restaurants")
-- "delete" = l'utilisateur veut supprimer des prospects existants selon des critères (ex: "supprime les prospects de 1000", "efface les prospects sans email")
+- "delete" = l'utilisateur veut supprimer des prospects existants selon UN OU PLUSIEURS critères (localisation ET/OU catégorie ET/OU has_email/has_website ET/OU score), quel que soit le verbe employé (supprime, efface, retire, enlève, nettoie). Le critère peut être UNIQUEMENT un filtre sans lieu ni catégorie.
+  Exemples : "supprime les prospects de 1000", "efface les prospects sans email", "supprime tous les prospects de type café", "efface les prospects de construction à Namur", "supprime les prospects sans site web" (has_website=false, aucun lieu/catégorie requis), "supprime les restaurants qui n'ont pas de mail à Namur", "retire les prospects avec un score inférieur à 30".
+  RÈGLE CRITIQUE : dès qu'un verbe de suppression (supprime/efface/retire/enlève/nettoie) est présent, l'intent est TOUJOURS "delete" ou "delete_all" — JAMAIS "general", même si un seul critère (ou aucun lieu) est mentionné.
 - "delete_all" = l'utilisateur veut supprimer TOUTE la base sans aucun critère (ex: "supprime toute la base de données", "efface tous les prospects"). N'attribue JAMAIS delete_all_confirm=true sauf confirmation explicite et sans ambiguïté dans le message lui-même.
 - "report" = l'utilisateur veut un BILAN, ANALYSE, RAPPORT sur une entreprise précise (ex: "fait un bilan sur l'entreprise X")
 - "general" = tout le reste (salutations, questions générales, météo)
@@ -134,39 +285,53 @@ IMPORTANT : Si la requête contient une ville belge principale, traduis-la immé
 Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
 """
 
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": prompt_system},
-                {"role": "user", "content": clean_query}
-            ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.0,  # Strict déterminisme pour production
-            response_format={"type": "json_object"}
-        )
+    max_attempts = 2
+    last_error = None
 
-        donnees_extraites = json.loads(chat_completion.choices[0].message.content)
-        
-        # Validation structurée via Pydantic
-        intention_validee = ExtractionIntention(**donnees_extraites)
+    for attempt in range(1, max_attempts + 1):
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": prompt_system},
+                    {"role": "user", "content": clean_query}
+                ],
+                model="llama-3.3-70b-versatile",
+                temperature=0.0,  # Strict déterminisme pour production
+                response_format={"type": "json_object"}
+            )
 
-        state["intent"] = intention_validee.intent
-        state["category"] = intention_validee.category
-        state["company_name"] = intention_validee.company_name
-        state["postal_code"] = intention_validee.location
-        state["city"] = intention_validee.city
-        state["search"] = intention_validee.search
-        state["limit"] = intention_validee.limit
-        state["score_min"] = intention_validee.score_min
-        state["score_max"] = intention_validee.score_max
-        state["rank"] = intention_validee.rank
-        state["has_email"] = intention_validee.has_email
-        state["has_website"] = intention_validee.has_website
-        state["delete_confirm"] = intention_validee.delete_confirm
-        state["delete_all_confirm"] = intention_validee.delete_all_confirm
+            donnees_extraites = json.loads(chat_completion.choices[0].message.content)
 
-    except Exception as e:
-        logger.error(f"⚠️ Erreur lors de l'extraction de l'intention : {e}")
+            # Validation structurée via Pydantic
+            intention_validee = ExtractionIntention(**donnees_extraites)
+
+            state["intent"] = intention_validee.intent
+            state["category"] = intention_validee.category
+            state["company_name"] = intention_validee.company_name
+            state["postal_code"] = intention_validee.location
+            state["city"] = intention_validee.city
+            state["search"] = intention_validee.search
+            state["limit"] = intention_validee.limit
+            state["score_min"] = intention_validee.score_min
+            state["score_max"] = intention_validee.score_max
+            state["rank"] = intention_validee.rank
+            state["has_email"] = intention_validee.has_email
+            state["has_website"] = intention_validee.has_website
+            state["delete_confirm"] = intention_validee.delete_confirm
+            state["delete_all_confirm"] = intention_validee.delete_all_confirm
+
+            last_error = None
+            break
+
+        except Exception as e:
+            last_error = e
+            logger.warning(f"⚠️ Tentative {attempt}/{max_attempts} d'extraction d'intention échouée : {e}")
+
+    if last_error is not None:
+        logger.error(f"⚠️ Échec définitif de l'extraction de l'intention après {max_attempts} tentatives : {last_error}")
+        # Le court-circuit de suppression en amont a déjà géré tout verbe de
+        # suppression avant d'arriver ici : un échec à ce stade ne concerne
+        # donc jamais une demande de suppression, "general" est un repli sûr.
         state["intent"] = "general"
         state["postal_code"] = None
         state["category"] = None
@@ -276,9 +441,39 @@ def _parse_int(value, default=None):
         return default
 
 
-def _build_db_filter(state: AgentState) -> dict:
+def _build_db_filter(state: AgentState, scope_to_owner: bool = False) -> dict:
+    """
+    Construit le filtre Mongo à partir des critères extraits par le LLM.
+
+    BelgoData est un outil d'équipe : Admin, les collaborateurs (ex: Saif,
+    Ons Salmi) et les scrapes automatiques ("Système") partagent TOUS la
+    même base de prospects. Par défaut (scope_to_owner=False), aucune
+    restriction par propriétaire n'est appliquée : recherche, classement,
+    comptage ET suppression portent sur l'ensemble de la base partagée,
+    quel que soit qui a scrapé chaque prospect à l'origine.
+
+    Le paramètre scope_to_owner reste disponible si un jour un usage
+    "mes prospects à moi uniquement" doit être ajouté (ex: un futur
+    filtre explicite demandé par l'utilisateur), mais n'est plus activé
+    par défaut sur aucun des nœuds actuels.
+
+    Les prospects déjà soft-deleted (deleted=True) sont systématiquement
+    exclus des lectures et des futures suppressions.
+    """
     filter_query = {}
-    conditions = []
+    conditions = [{"deleted": {"$ne": True}}]
+
+    if scope_to_owner:
+        user_id = state.get("user_id")
+        if not user_id:
+            conditions.append({"_id": {"$exists": False}})
+        else:
+            try:
+                owner_object_id = ObjectId(user_id)
+            except (InvalidId, TypeError):
+                conditions.append({"_id": {"$exists": False}})
+            else:
+                conditions.append({"createdBy.userId": owner_object_id})
 
     if state.get("postal_code"):
         conditions.append({"address.postcode": state["postal_code"]})
@@ -329,6 +524,136 @@ def _build_db_filter(state: AgentState) -> dict:
         filter_query["$and"] = conditions
 
     return filter_query
+
+
+# =====================================================================
+# SÉCURITÉ SUPPRESSION : confirmation liée aux critères exacts
+# =====================================================================
+
+def _hash_filter(filter_query: dict, action: str) -> str:
+    """
+    Empreinte stable des critères de suppression. Sert à garantir qu'une
+    confirmation ("oui, confirme") valide EXACTEMENT la suppression qui a
+    été annoncée à l'utilisateur, et pas une autre requête de suppression
+    qui aurait été reformulée entre-temps dans la conversation.
+    """
+    canonical = json.dumps(filter_query, sort_keys=True, default=str)
+    raw = f"{action}:{canonical}"
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _create_pending_confirmation(db, session_id: str, user_id: str, action: str,
+                                  filter_query: dict, matched_count: int) -> None:
+    """
+    Enregistre une intention de suppression en attente de confirmation.
+    Une confirmation antérieure pour la même session est écrasée (une seule
+    suppression en attente à la fois par session).
+
+    Le filtre lui-même est stocké tel quel (pas seulement son empreinte) :
+    un message de confirmation ("oui, confirme la suppression") ne répète
+    généralement aucun critère, donc on ne peut pas se contenter de
+    reconstruire le filtre à partir de l'état de ce tour-là pour vérifier
+    l'empreinte — il faut le filtre original sous la main.
+    """
+    db["delete_confirmations"].update_one(
+        {"session_id": session_id, "user_id": user_id},
+        {"$set": {
+            "action": action,
+            "filter_hash": _hash_filter(filter_query, action),
+            "filter_query": filter_query,
+            "matched_count": matched_count,
+            "created_at": datetime.now(timezone.utc),
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=DELETE_CONFIRMATION_TTL_SECONDS),
+        }},
+        upsert=True,
+    )
+
+
+def _get_pending_confirmation(db, session_id: str, user_id: str, action: str) -> Optional[dict]:
+    """
+    Récupère la confirmation en attente (non expirée) pour cette session/compte/action,
+    sans la consommer. Retourne None si absente ou expirée (et la nettoie si expirée).
+    """
+    doc = db["delete_confirmations"].find_one({"session_id": session_id, "user_id": user_id})
+    if not doc:
+        return None
+    if doc.get("action") != action:
+        return None
+    if doc.get("expires_at") and doc["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        db["delete_confirmations"].delete_one({"_id": doc["_id"]})
+        return None
+    return doc
+
+
+def _consume_pending_confirmation(db, session_id: str, user_id: str, action: str,
+                                   filter_query: dict, current_matched_count: int) -> bool:
+    """
+    Vérifie qu'une confirmation valide et non expirée existe bien pour cette
+    session/utilisateur/action et correspond au filtre fourni, puis la consomme
+    (empêche le rejeu de la même confirmation).
+    """
+    doc = db["delete_confirmations"].find_one({"session_id": session_id, "user_id": user_id})
+    if not doc:
+        return False
+
+    if doc.get("expires_at") and doc["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        db["delete_confirmations"].delete_one({"_id": doc["_id"]})
+        return False
+
+    if doc.get("action") != action:
+        return False
+
+    if doc.get("filter_hash") != _hash_filter(filter_query, action):
+        return False
+
+    if doc.get("matched_count") != current_matched_count:
+        # La base a changé entre la demande et la confirmation : on invalide
+        # par prudence plutôt que de supprimer un ensemble différent de celui annoncé.
+        db["delete_confirmations"].delete_one({"_id": doc["_id"]})
+        return False
+
+    # Confirmation valide : on la consomme immédiatement (usage unique).
+    db["delete_confirmations"].delete_one({"_id": doc["_id"]})
+    return True
+
+
+# =====================================================================
+# AFFICHAGE : mise en forme enrichie des classements
+# =====================================================================
+
+RANK_ICONS = {1: "🥇", 2: "🥈", 3: "🥉"}
+
+
+def _format_prospect_line(position: int, prospect: dict) -> str:
+    """
+    Ligne de présentation soignée pour un prospect dans un classement :
+    médaille pour le top 3, nom en gras, catégorie en italique, score mis
+    en valeur, ville avec pictogramme, indicateurs email/site.
+    """
+    icon = RANK_ICONS.get(position, f"**{position}.**")
+    name = prospect.get("name") or "Entreprise sans nom"
+    category = prospect.get("category")
+    score = prospect.get("score")
+    address = prospect.get("address") or {}
+    city = address.get("city") or address.get("postcode") or ""
+    has_email = "📧" if prospect.get("email") else "❌📧"
+    has_website = "🌐" if prospect.get("website") else "❌🌐"
+
+    parts = [f"{icon} **{name}**"]
+    if category:
+        parts.append(f"_{category}_")
+    if score is not None:
+        parts.append(f"⭐ **{score}/100**")
+    if city:
+        parts.append(f"📍 {city}")
+    parts.append(f"{has_email} {has_website}")
+
+    return " · ".join(parts)
+
+
+def _format_prospect_ranking(results: list) -> str:
+    lines = [_format_prospect_line(i + 1, p) for i, p in enumerate(results)]
+    return "\n".join(lines)
 
 
 def search_prospects_node(state: AgentState) -> AgentState:
@@ -440,8 +765,9 @@ def best_prospects_node(state: AgentState) -> AgentState:
             )
         else:
             state["response"] = (
-                f"🏆 Voici les {len(results)} meilleurs prospects{criteres}. "
-                f"Total correspondant : {total}."
+                f"🏆 Voici les {len(results)} meilleurs prospects{criteres} "
+                f"(total correspondant : {total}) :\n\n"
+                f"{_format_prospect_ranking(results)}"
             )
         state["suggested_actions"] = ["Voir le rapport d'un prospect", "Compter les prospects restants"]
 
@@ -477,13 +803,40 @@ def count_prospects_node(state: AgentState) -> AgentState:
 
 def delete_prospects_node(state: AgentState) -> AgentState:
     """
-    Supprime des prospects en base selon des critères de recherche sécurisés.
+    Supprime des prospects en base selon des critères, avec confirmation
+    obligatoire vérifiée cryptographiquement (voir _create/_consume_pending_confirmation).
+
+    Le nettoyage de la base reste pleinement possible — c'est le but premier
+    de ce node — mais chaque suppression passe par 2 messages utilisateur :
+    1) la demande initiale -> l'agent affiche ce qui va être supprimé et enregistre
+       une confirmation en attente liée EXACTEMENT à ces critères et à ce compte.
+    2) la confirmation -> l'agent revérifie que rien n'a changé entre-temps,
+       puis exécute un soft delete (récupérable) et journalise l'action.
     """
     db = get_db()
     collection = db["prospects"]
+    user_id = state.get("user_id")
+    session_id = state.get("session_id") or "no_session"
 
-    filter_query = _build_db_filter(state)
-    if not filter_query:
+    if not user_id:
+        state["response"] = "Impossible d'identifier votre compte pour cette action. Merci de vous reconnecter."
+        state["suggested_actions"] = []
+        return state
+
+    filter_query = _build_db_filter(state)  # base partagée : aucun scope par propriétaire
+    has_criteria = any(k not in ("owner_id", "deleted") for cond in filter_query.get("$and", []) for k in cond.keys())
+
+    # Une réponse de confirmation ("oui, confirme la suppression") ne répète
+    # généralement aucun critère : on récupère alors le filtre déjà annoncé et
+    # stocké lors de la demande initiale, plutôt que d'exiger que l'utilisateur
+    # reformule tous ses critères dans son message de confirmation.
+    if state.get("delete_confirm") and not has_criteria:
+        pending = _get_pending_confirmation(db, session_id, user_id, "delete")
+        if pending is not None:
+            filter_query = pending["filter_query"]
+            has_criteria = True
+
+    if not has_criteria:
         state["response"] = (
             "Je dois avoir des critères précis avant de supprimer des prospects. "
             "Par exemple : 'Supprime les prospects de 1000' ou 'Efface les prospects de construction à Namur'."
@@ -493,23 +846,67 @@ def delete_prospects_node(state: AgentState) -> AgentState:
 
     total = collection.count_documents(filter_query)
     if total == 0:
-        state["response"] = "Aucun prospect ne correspond aux critères de suppression indiqués."
+        state["response"] = "Aucun prospect ne correspond aux critères de suppression indiqués (dans vos données)."
         state["suggested_actions"] = ["Affiche les prospects correspondants", "Essaye un autre filtre"]
         return state
 
     if not state.get("delete_confirm"):
+        # Étape 1 : on annonce précisément ce qui sera supprimé et on enregistre
+        # une confirmation en attente, liée à ces critères + ce compte + ce nombre.
+        _create_pending_confirmation(db, session_id, user_id, "delete", filter_query, total)
+
+        preview = list(collection.find(filter_query).limit(3))
+        preview_names = ", ".join(p.get("name", "?") for p in preview)
+        more = f" (et {total - len(preview)} autre(s))" if total > len(preview) else ""
+        gros_volume = (
+            f"\n⚠️ Volume important ({total} prospects) — vérifiez bien vos critères avant de confirmer."
+            if total > 500 else ""
+        )
+
         state["response"] = (
-            f"⚠️ Cette action va supprimer **{total} prospect(s)** correspondant à vos critères "
-            f"(action irréversible). Répondez 'oui, confirme la suppression' pour valider."
+            f"⚠️ Cette action va supprimer **{total} prospect(s)**, par exemple : {preview_names}{more}.{gros_volume}\n"
+            f"Action réversible sous 30 jours (archivage), mais retirée de vos résultats immédiatement.\n"
+            f"Répondez **'oui, confirme la suppression'** dans les {DELETE_CONFIRMATION_TTL_SECONDS // 60} minutes pour valider."
         )
         state["suggested_actions"] = ["Oui, confirme la suppression", "Annuler"]
         return state
 
-    result = collection.delete_many(filter_query)
+    # Étape 2 : l'utilisateur a répondu positivement. On revérifie que la
+    # confirmation en attente correspond exactement à cette suppression.
+    confirmed = _consume_pending_confirmation(db, session_id, user_id, "delete", filter_query, total)
+    if not confirmed:
+        state["response"] = (
+            "❌ Je ne trouve pas de confirmation valide pour cette suppression précise "
+            "(elle a peut-être expiré, ou les critères ont changé entre-temps). "
+            "Relancez la demande de suppression pour recommencer."
+        )
+        state["suggested_actions"] = ["Relancer la suppression"]
+        return state
+
+    result = collection.update_many(
+        filter_query,
+        {"$set": {
+            "deleted": True,
+            "deleted_at": datetime.now(timezone.utc),
+            "deleted_by": user_id,
+        }}
+    )
+
+    db["audit_logs"].insert_one({
+        "user_id": user_id,
+        "action": "delete_prospects",
+        "criteria": {k: state.get(k) for k in ("postal_code", "city", "category", "search", "score_min", "score_max", "has_email", "has_website")},
+        "deleted_count": result.modified_count,
+        "source": "ai-agent",
+        "session_id": session_id,
+        "created_at": datetime.now(timezone.utc),
+    })
+
     state["prospects_sample"] = []
-    state["scraped_count"] = result.deleted_count
+    state["scraped_count"] = result.modified_count
     state["response"] = (
-        f"🗑️ Suppression effectuée : {result.deleted_count} prospect(s) supprimé(s) de la base."
+        f"🗑️ Suppression effectuée : **{result.modified_count} prospect(s)** retiré(s) de votre base "
+        f"(archivés 30 jours, récupérables si erreur)."
     )
     state["suggested_actions"] = ["Compter les prospects restants", "Trouver les meilleurs prospects"]
     return state
@@ -617,25 +1014,70 @@ def generate_report_node(state: AgentState) -> AgentState:
 
 def delete_all_prospects_node(state: AgentState) -> AgentState:
     """
-    Suppression de TOUTE la base de prospects. Action irréversible et à haut risque :
-    nécessite une confirmation explicite de l'utilisateur AVANT toute suppression réelle.
+    Suppression de TOUTE la base de prospects PARTAGÉE (BelgoData est un outil
+    d'équipe : Admin, collaborateurs et scrapes automatiques partagent la même
+    base). Cette action supprime donc les prospects de TOUS les comptes, pas
+    seulement ceux de la personne qui déclenche l'action. Action à très haut
+    risque : confirmation vérifiée obligatoire, et identité du demandeur
+    toujours journalisée dans audit_logs.
     """
     db = get_db()
     collection = db["prospects"]
+    user_id = state.get("user_id")
+    session_id = state.get("session_id") or "no_session"
+
+    if not user_id:
+        state["response"] = "Impossible d'identifier votre compte pour cette action. Merci de vous reconnecter."
+        state["suggested_actions"] = []
+        return state
+
+    # Portée volontairement NON restreinte au demandeur : base partagée d'équipe.
+    filter_query = _build_db_filter(state, scope_to_owner=False)
+    total = collection.count_documents(filter_query)
+
+    if total == 0:
+        state["response"] = "La base de prospects partagée est déjà vide."
+        state["suggested_actions"] = ["Lancer une prospection"]
+        return state
 
     if not state.get("delete_all_confirm"):
-        total = collection.count_documents({})
+        _create_pending_confirmation(db, session_id, user_id, "delete_all", filter_query, total)
         state["response"] = (
-            f"⚠️ Vous êtes sur le point de supprimer **TOUTE la base de prospects** ({total} prospect(s), "
-            f"action irréversible). Répondez explicitement 'oui, supprime tout' pour confirmer."
+            f"⚠️ Vous êtes sur le point de supprimer **TOUTE la base de prospects partagée** "
+            f"({total} prospect(s), tous comptes confondus — Admin, collaborateurs et scrapes automatiques — "
+            f"archivage 30 jours). "
+            f"Répondez explicitement **'oui, supprime tout'** dans les "
+            f"{DELETE_CONFIRMATION_TTL_SECONDS // 60} minutes pour confirmer."
         )
         state["suggested_actions"] = ["Oui, supprime tout", "Annuler"]
         return state
 
-    result = collection.delete_many({})
+    confirmed = _consume_pending_confirmation(db, session_id, user_id, "delete_all", filter_query, total)
+    if not confirmed:
+        state["response"] = (
+            "❌ Je ne trouve pas de confirmation valide pour cette suppression totale "
+            "(expirée, ou la base a changé entre-temps). Relancez la demande pour recommencer."
+        )
+        state["suggested_actions"] = ["Relancer la suppression totale"]
+        return state
+
+    result = collection.update_many(
+        filter_query,
+        {"$set": {"deleted": True, "deleted_at": datetime.now(timezone.utc), "deleted_by": user_id}}
+    )
+
+    db["audit_logs"].insert_one({
+        "user_id": user_id,
+        "action": "delete_all_prospects",
+        "deleted_count": result.modified_count,
+        "source": "ai-agent",
+        "session_id": session_id,
+        "created_at": datetime.now(timezone.utc),
+    })
+
     state["prospects_sample"] = []
-    state["scraped_count"] = result.deleted_count
-    state["response"] = f"🗑️ Toute la base a été supprimée : {result.deleted_count} prospect(s) effacé(s)."
+    state["scraped_count"] = result.modified_count
+    state["response"] = f"🗑️ La base partagée a été vidée : **{result.modified_count} prospect(s)** archivé(s) (récupérables 30 jours)."
     state["suggested_actions"] = []
     return state
 
