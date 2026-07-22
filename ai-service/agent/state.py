@@ -31,6 +31,9 @@ class AgentState(TypedDict):
     suggested_actions: Optional[List[str]]
     report: Optional[dict]
     session_id: Optional[str]
+    company_names: Optional[List[str]]
+    email_draft: Optional[dict]
+    comparison: Optional[dict]
 
 class ExtractionIntention(BaseModel):
     intent: Literal[
@@ -42,11 +45,17 @@ class ExtractionIntention(BaseModel):
         "delete",
         "delete_all",
         "report",
+        "email",
+        "compare",
         "general",
         "clarify",
     ] = Field(
         ..., 
-        description="L'action demandée : 'scrape' (recherche OSM), 'search'/'list' (recherche en base), 'best' (meilleurs scores), 'count' (compte), 'delete' (suppression ciblée par critères), 'delete_all' (suppression de TOUTE la base sans critère), 'report' (bilan entreprise), 'general' (discussion), 'clarify' (si incompréhensible)."
+        description="L'action demandée : 'scrape' (recherche OSM), 'search'/'list' (recherche en base), 'best' (meilleurs scores), 'count' (compte), 'delete' (suppression ciblée par critères), 'delete_all' (suppression de TOUTE la base sans critère), 'report' (bilan entreprise), 'email' (générer un email de prospection pour une entreprise), 'compare' (comparer plusieurs entreprises entre elles), 'general' (discussion), 'clarify' (si incompréhensible)."
+    )
+    company_names: Optional[List[str]] = Field(
+        None,
+        description="Liste des noms d'entreprises à comparer si intent='compare' (2 noms ou plus). Sinon null."
     )
     category: Optional[str] = Field(
         None, 

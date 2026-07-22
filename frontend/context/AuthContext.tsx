@@ -81,6 +81,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  function getSafeUser(user: Partial<User>) {
+    return {
+      id: user.id || "",
+      name: user.name || "",
+      email: user.email || "",
+      role: user.role || "",
+      phone: user.phone || "",
+    } as User;
+  }
+
   useEffect(() => {
     if (token) {
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
@@ -107,16 +117,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       delete axios.defaults.headers.common["Authorization"];
     }
   }, [token]);
-
-  function getSafeUser(user: Partial<User>) {
-    return {
-      id: user.id || "",
-      name: user.name || "",
-      email: user.email || "",
-      role: user.role || "",
-      phone: user.phone || "",
-    } as User;
-  }
 
   async function login(email: string, password: string) {
     setLoading(true);

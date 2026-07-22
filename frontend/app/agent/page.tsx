@@ -28,7 +28,14 @@ interface Message {
   content: string;
   suggestedActions?: string[];
   timestamp: string;
-  report?: Report; 
+  report?: Report;
+  emailDraft?: EmailDraft;
+}
+
+interface EmailDraft {
+  subject: string;
+  body: string;
+  prospect_id: string;
 }
 
 interface Report {
@@ -47,6 +54,8 @@ interface Report {
   forces: string[];
   faiblesses: string[];
   argumentaire: string;
+  temperature?: "chaud" | "tiede" | "froid";
+  temperature_reason?: string;
 }
 
 interface ConversationSummary {
@@ -276,6 +285,7 @@ export default function AgentPage() {
         timestamp: nowTime(),
         suggestedActions: res.data?.suggested_actions,
         report: res.data?.report,
+        emailDraft: res.data?.email_draft,
       };
 
       const finalMessages = [...updatedMessages, agentMessage];
@@ -416,6 +426,28 @@ export default function AgentPage() {
                     >
                       <Building2 size={13} />
                       Ouvrir le bilan de {msg.report.name}
+                      {msg.report.temperature && (
+                        <span>
+                          {msg.report.temperature === "chaud" && "🔥"}
+                          {msg.report.temperature === "tiede" && "🌤️"}
+                          {msg.report.temperature === "froid" && "❄️"}
+                        </span>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Bouton copier pour un email de prospection généré */}
+                  {msg.emailDraft && (
+                    <button
+                      onClick={() =>
+                        navigator.clipboard.writeText(
+                          `Objet : ${msg.emailDraft!.subject}\n\n${msg.emailDraft!.body}`
+                        )
+                      }
+                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-700 font-medium hover:bg-emerald-100/70 transition-colors"
+                    >
+                      <FileText size={13} />
+                      Copier l&apos;email
                     </button>
                   )}
 
@@ -536,13 +568,28 @@ export default function AgentPage() {
                   </p>
                 </div>
                 
-                {/* Score badge haut niveau */}
-                <div className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]">
-                  <div className="text-xs text-slate-400 font-medium">Score</div>
-                  <div className={`text-xl font-black ${
-                    activeReport.score >= 70 ? "text-emerald-600" : activeReport.score >= 50 ? "text-amber-500" : "text-rose-500"
-                  }`}>
-                    {activeReport.score}
+                <div className="flex items-center gap-2">
+                  {activeReport.temperature && (
+                    <div
+                      className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]"
+                      title={activeReport.temperature_reason}
+                    >
+                      <div className="text-xs text-slate-400 font-medium">Chaleur</div>
+                      <div className="text-xl">
+                        {activeReport.temperature === "chaud" && "🔥"}
+                        {activeReport.temperature === "tiede" && "🌤️"}
+                        {activeReport.temperature === "froid" && "❄️"}
+                      </div>
+                    </div>
+                  )}
+                  {/* Score badge haut niveau */}
+                  <div className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]">
+                    <div className="text-xs text-slate-400 font-medium">Score</div>
+                    <div className={`text-xl font-black ${
+                      activeReport.score >= 70 ? "text-emerald-600" : activeReport.score >= 50 ? "text-amber-500" : "text-rose-500"
+                    }`}>
+                      {activeReport.score}
+                    </div>
                   </div>
                 </div>
               </div>

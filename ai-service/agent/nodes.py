@@ -64,11 +64,18 @@ Génère une analyse de prospection au format JSON STRICT (rien d'autre, pas de 
   "analyse": "<3-4 phrases, en t'appuyant sur les données internes ET le contexte web>",
   "forces": ["<force1>", "<force2>", "<force3>"],
   "faiblesses": ["<faiblesse1>", "<faiblesse2>", "<faiblesse3>"],
-  "argumentaire": "<2-3 phrases suggérant comment approcher cette entreprise commercialement>"
+  "argumentaire": "<2-3 phrases suggérant comment approcher cette entreprise commercialement>",
+  "temperature": "chaud" | "tiede" | "froid",
+  "temperature_reason": "<1 phrase courte justifiant la température choisie>"
 }}
 
 Base le score sur: téléphone (+15), email (+10), site web (+15), adresse complète (+10), pertinence du secteur (+20 max), qualité/quantité des informations web trouvées (+30 max).
 Si les informations web sont vides ou non pertinentes, base-toi uniquement sur les données internes et indique une présence digitale plus faible.
+
+Détermine "temperature" (chaleur du prospect pour la prospection commerciale) ainsi :
+- "chaud" : données de contact complètes (téléphone ET email OU site web) ET présence web positive/active récente.
+- "tiede" : données de contact partielles OU présence web moyenne/mitigée.
+- "froid" : données de contact quasi absentes ET aucune présence web pertinente trouvée.
 """
 
 # =====================================================================
@@ -210,6 +217,7 @@ def classify_intent_node(state: AgentState) -> AgentState:
         state["postal_code"] = rule_based["location"]
         state["city"] = None
         state["company_name"] = None
+        state["company_names"] = None
         state["search"] = None
         state["limit"] = None
         state["score_min"] = None
@@ -223,11 +231,12 @@ def classify_intent_node(state: AgentState) -> AgentState:
 
     prompt_system = f"""Tu es l'ingénieur en chef de l'analyse d'intentions de BelgoData.
 Tu dois analyser la requête de l'utilisateur et retourner UNIQUEMENT un JSON avec ces champs :
-- intent: "scrape" | "search" | "list" | "best" | "count" | "delete" | "report" | "general" | "clarify"
+- intent: "scrape" | "search" | "list" | "best" | "count" | "delete" | "report" | "email" | "compare" | "general" | "clarify"
 - location: code postal belge (4 chiffres) OU nom de ville belge, sinon null
 - city: nom de la ville extraite si disponible, sinon null
 - category: une des catégories valides répertoriées ci-dessous, sinon null
-- company_name: nom de l'entreprise si intent=report, sinon null
+- company_name: nom de l'entreprise si intent=report OU intent=email, sinon null
+- company_names: liste des noms d'entreprises si intent=compare (2 noms ou plus), sinon null
 - search: terme libre de recherche pour la base ou la suppression, sinon null
 - limit: nombre maximum d'éléments demandés pour un classement TOP N (ex: "les 5 meilleurs", "top 10") -> limit=N. Pour un singulier explicite ("le meilleur prospect", "un prospect") -> limit=1. NE PAS utiliser limit pour une demande de rang précis (voir 'rank' ci-dessous). Sinon null.
 - rank: UNIQUEMENT si l'utilisateur demande un rang précis et unique dans le classement (ex: "le 2ème meilleur score" -> rank=2, "le 3ème meilleur prospect" -> rank=3, "le deuxième" -> rank=2). Ne PAS confondre avec limit : "les 2 meilleurs" -> limit=2 (rank=null), alors que "le 2ème meilleur" -> rank=2 (limit=null).
@@ -271,6 +280,8 @@ RÈGLES D'INTENTION (CRITIQUE - LIRE ATTENTIVEMENT POUR ÉVITER LA CONFUSION) :
   RÈGLE CRITIQUE : dès qu'un verbe de suppression (supprime/efface/retire/enlève/nettoie) est présent, l'intent est TOUJOURS "delete" ou "delete_all" — JAMAIS "general", même si un seul critère (ou aucun lieu) est mentionné.
 - "delete_all" = l'utilisateur veut supprimer TOUTE la base sans aucun critère (ex: "supprime toute la base de données", "efface tous les prospects"). N'attribue JAMAIS delete_all_confirm=true sauf confirmation explicite et sans ambiguïté dans le message lui-même.
 - "report" = l'utilisateur veut un BILAN, ANALYSE, RAPPORT sur une entreprise précise (ex: "fait un bilan sur l'entreprise X")
+- "email" = l'utilisateur veut un EMAIL/MESSAGE de prospection prêt à envoyer pour une entreprise précise (ex: "rédige un email pour l'entreprise X", "écris-moi un mail de prospection pour Y", "génère un message pour contacter Z")
+- "compare" = l'utilisateur veut COMPARER plusieurs entreprises précises entre elles pour prioriser (ex: "compare X et Y", "compare ces 3 prospects : A, B et C", "lequel entre X, Y et Z est le plus prometteur")
 - "general" = tout le reste (salutations, questions générales, météo)
 
 IMPORTANT : Si la requête contient une ville belge principale, traduis-la immédiatement en code postal valide :
@@ -308,6 +319,7 @@ Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
             state["intent"] = intention_validee.intent
             state["category"] = intention_validee.category
             state["company_name"] = intention_validee.company_name
+            state["company_names"] = intention_validee.company_names
             state["postal_code"] = intention_validee.location
             state["city"] = intention_validee.city
             state["search"] = intention_validee.search
@@ -912,6 +924,63 @@ def delete_prospects_node(state: AgentState) -> AgentState:
     return state
 
 
+EMAIL_PROMPT = """Tu es un commercial B2B expérimenté en Belgique, spécialisé en prospection par email.
+
+=== ENTREPRISE CIBLE ===
+Nom: {name}
+Catégorie: {category}
+Adresse: {address}
+Site web: {website}
+
+=== ÉLÉMENTS D'ANALYSE DISPONIBLES ===
+{analysis_context}
+
+Rédige un email de prospection commerciale COURT, personnalisé et prêt à envoyer pour approcher cette entreprise.
+Réponds au format JSON STRICT (rien d'autre, pas de markdown), avec cette structure exacte:
+{{
+  "subject": "<objet de l'email, court et accrocheur, sans emoji>",
+  "body": "<corps de l'email en français, ton professionnel et chaleureux, 120-180 mots, avec formule de politesse d'ouverture et de clôture, SANS placeholder du type [Votre nom] à part une signature générique 'L'équipe BelgoData'>"
+}}
+
+Le mail doit s'appuyer sur les forces/l'argumentaire ci-dessus quand disponibles, rester concret et non générique, et donner une raison précise de contacter CETTE entreprise en particulier.
+"""
+
+COMPARE_PROMPT = """Tu es un expert en stratégie commerciale B2B en Belgique.
+
+Voici plusieurs prospects à comparer pour aider un commercial à prioriser ses efforts de prospection :
+
+{prospects_context}
+
+Réponds au format JSON STRICT (rien d'autre, pas de markdown), avec cette structure exacte:
+{{
+  "ranking": ["<nom du prospect le plus prioritaire>", "<2ème>", "<3ème>", ...],
+  "recommendation": "<3-4 phrases expliquant pourquoi cet ordre de priorité et par où commencer>"
+}}
+"""
+
+TEMPERATURE_EMOJI = {"chaud": "🔥", "tiede": "🌤️", "froid": "❄️"}
+
+
+def _fallback_temperature(prospect: dict, score: int, web_results: list) -> tuple[str, str]:
+    """
+    V1 heuristique de secours (aucune API tierce) utilisée quand le LLM ne
+    renvoie pas de champ "temperature" exploitable. Combine la complétude
+    des coordonnées de contact, le score déjà calculé et la présence
+    d'informations web trouvées (proxy de l'activité/présence en ligne).
+    """
+    has_phone = bool(prospect.get("phone"))
+    has_email = bool(prospect.get("email"))
+    has_website = bool(prospect.get("website"))
+    contact_points = sum([has_phone, has_email, has_website])
+    web_signal = len(web_results or [])
+
+    if contact_points >= 2 and (score >= 65 or web_signal >= 2):
+        return "chaud", "Coordonnées complètes et bonne présence en ligne."
+    if contact_points == 0 and web_signal == 0:
+        return "froid", "Aucune coordonnée de contact ni présence web détectée."
+    return "tiede", "Données de contact ou présence web partielles."
+
+
 def generate_report_node(state: AgentState) -> AgentState:
     """
     Génère un rapport B2B complet enrichi par le web avec scoring algorithmique.
@@ -969,6 +1038,12 @@ def generate_report_node(state: AgentState) -> AgentState:
             "forces": [], "faiblesses": [], "argumentaire": "",
         }
 
+    score_value = analysis.get("score", 50)
+    temperature = analysis.get("temperature")
+    temperature_reason = analysis.get("temperature_reason")
+    if temperature not in ("chaud", "tiede", "froid"):
+        temperature, temperature_reason = _fallback_temperature(prospect, score_value, web_results)
+
     report_doc = {
         "prospect_id": str(prospect["_id"]),
         "name": prospect.get("name"),
@@ -984,6 +1059,8 @@ def generate_report_node(state: AgentState) -> AgentState:
         "forces": analysis.get("forces", []),
         "faiblesses": analysis.get("faiblesses", []),
         "argumentaire": analysis.get("argumentaire", ""),
+        "temperature": temperature,
+        "temperature_reason": temperature_reason,
         "web_sources": web_results,
         "requestedBy": {
             "userId": state.get("user_id"),
@@ -996,18 +1073,191 @@ def generate_report_node(state: AgentState) -> AgentState:
     result = reports_collection.insert_one(report_doc)
     collection.update_one(
         {"_id": prospect["_id"]},
-        {"$set": {"score": analysis.get("score", 50)}}
+        {"$set": {"score": score_value, "temperature": temperature}}
     )
     report_doc["_id"] = str(result.inserted_id)
 
+    temp_emoji = TEMPERATURE_EMOJI.get(temperature, "")
+    temp_label = {"chaud": "Chaud", "tiede": "Tiède", "froid": "Froid"}.get(temperature, temperature)
     state["report"] = report_doc
     state["response"] = (
         f"📊 **Bilan stratégique généré avec succès pour {prospect.get('name')}**\n\n"
         f"• **Score global** : {analysis.get('score')}/100\n"
+        f"• **Température** : {temp_emoji} {temp_label} — {temperature_reason}\n"
         f"• **Présence digitale** : {analysis.get('presence_digitale')}\n"
         f"• **Analyse** : {analysis.get('analyse')}\n\n"
         f"💡 *Données consolidées avec {len(web_results)} source(s) externes du Web.*"
     )
+    state["suggested_actions"] = []
+    return state
+
+
+def generate_email_node(state: AgentState) -> AgentState:
+    """
+    Génère un email de prospection prêt à envoyer pour une entreprise.
+    Réutilise le dernier bilan (rapport) déjà généré s'il existe, pour
+    s'appuyer sur un argumentaire déjà validé ; sinon effectue une recherche
+    web légère pour ne pas partir d'une page blanche.
+    """
+    db = get_db()
+    collection = db["prospects"]
+
+    company_name = state.get("company_name")
+    if not company_name:
+        state["response"] = "Pour quelle entreprise dois-je rédiger un email de prospection ? Donnez-moi son nom exact."
+        state["suggested_actions"] = []
+        return state
+
+    prospect = collection.find_one({"name": {"$regex": company_name, "$options": "i"}})
+    if not prospect:
+        state["response"] = f"Je ne trouve pas l'entreprise '{company_name}' dans notre base locale de prospects."
+        state["suggested_actions"] = []
+        return state
+
+    address_str = ", ".join(filter(None, [
+        prospect.get("address", {}).get("street"),
+        prospect.get("address", {}).get("city"),
+        prospect.get("address", {}).get("postcode"),
+    ])) or "Non renseignée"
+
+    latest_report = db["reports"].find_one(
+        {"prospect_id": str(prospect["_id"])},
+        sort=[("createdAt", -1)],
+    )
+
+    if latest_report:
+        analysis_context = (
+            f"Score: {latest_report.get('score')}/100 | Température: {latest_report.get('temperature', 'inconnue')}\n"
+            f"Analyse: {latest_report.get('analyse', '')}\n"
+            f"Forces: {', '.join(latest_report.get('forces', []) or [])}\n"
+            f"Argumentaire commercial suggéré: {latest_report.get('argumentaire', '')}"
+        )
+    else:
+        web_results = search_company_web(name=prospect.get("name"), city=prospect.get("address", {}).get("city"))
+        analysis_context = (
+            "(Aucun bilan préalable en base pour cette entreprise.)\n" + format_web_context(web_results)
+        )
+
+    prompt = EMAIL_PROMPT.format(
+        name=prospect.get("name"),
+        category=prospect.get("category"),
+        address=address_str,
+        website=prospect.get("website") or "Non renseigné",
+        analysis_context=analysis_context,
+    )
+
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
+    )
+
+    raw = completion.choices[0].message.content.strip()
+    try:
+        email = json.loads(raw)
+        subject = email.get("subject", f"Collaboration avec {prospect.get('name')}")
+        body = email.get("body", "")
+    except json.JSONDecodeError:
+        subject = f"Collaboration avec {prospect.get('name')}"
+        body = "La génération automatisée de l'email est momentanément indisponible, veuillez réessayer."
+
+    state["email_draft"] = {"subject": subject, "body": body, "prospect_id": str(prospect["_id"])}
+    state["response"] = (
+        f"✉️ **Email de prospection prêt pour {prospect.get('name')}**\n\n"
+        f"**Objet :** {subject}\n\n"
+        f"{body}\n\n"
+        f"💡 *Copiez-collez directement dans votre client mail.*"
+        + ("" if latest_report else "\n\n_Astuce : générez d'abord un bilan complet sur cette entreprise pour un email encore plus personnalisé._")
+    )
+    state["suggested_actions"] = []
+    return state
+
+
+def compare_prospects_node(state: AgentState) -> AgentState:
+    """
+    Compare 2 entreprises (ou plus) nommées explicitement par l'utilisateur
+    et propose un ordre de priorité de prospection argumenté.
+    """
+    db = get_db()
+    collection = db["prospects"]
+
+    names = state.get("company_names") or ([state.get("company_name")] if state.get("company_name") else [])
+    names = [n for n in (names or []) if n]
+
+    if len(names) < 2:
+        state["response"] = (
+            "Donnez-moi au moins deux noms d'entreprises à comparer, par exemple : "
+            "\"compare Boulangerie Dupont et Café Central\"."
+        )
+        state["suggested_actions"] = []
+        return state
+
+    found = []
+    not_found = []
+    for name in names:
+        prospect = collection.find_one({"name": {"$regex": re.escape(name), "$options": "i"}})
+        if not prospect:
+            not_found.append(name)
+            continue
+        latest_report = db["reports"].find_one(
+            {"prospect_id": str(prospect["_id"])},
+            sort=[("createdAt", -1)],
+        )
+        found.append({
+            "name": prospect.get("name"),
+            "category": prospect.get("category"),
+            "score": (latest_report or {}).get("score", prospect.get("score")),
+            "temperature": (latest_report or {}).get("temperature", prospect.get("temperature")),
+            "presence_digitale": (latest_report or {}).get("presence_digitale"),
+            "argumentaire": (latest_report or {}).get("argumentaire"),
+        })
+
+    if len(found) < 2:
+        state["response"] = (
+            "Je n'ai pas trouvé assez de ces entreprises dans la base pour les comparer"
+            + (f" (introuvable(s) : {', '.join(not_found)})." if not_found else ".")
+            + " Lancez d'abord un scraping ou vérifiez l'orthographe."
+        )
+        state["suggested_actions"] = []
+        return state
+
+    prospects_context = "\n\n".join(
+        f"- {p['name']} ({p['category']}) : score={p['score'] if p['score'] is not None else 'inconnu'}/100, "
+        f"température={p['temperature'] or 'inconnue'}, présence digitale={p['presence_digitale'] or 'inconnue'}"
+        + (f", argumentaire existant: {p['argumentaire']}" if p['argumentaire'] else "")
+        for p in found
+    )
+
+    prompt = COMPARE_PROMPT.format(prospects_context=prospects_context)
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+    )
+
+    raw = completion.choices[0].message.content.strip()
+    try:
+        result = json.loads(raw)
+        ranking = result.get("ranking") or [p["name"] for p in sorted(found, key=lambda p: p["score"] or 0, reverse=True)]
+        recommendation = result.get("recommendation", "")
+    except json.JSONDecodeError:
+        ranking = [p["name"] for p in sorted(found, key=lambda p: p["score"] or 0, reverse=True)]
+        recommendation = "Classement basé uniquement sur le score disponible (analyse détaillée indisponible)."
+
+    state["comparison"] = {"prospects": found, "ranking": ranking, "recommendation": recommendation}
+
+    lines = [f"⚖️ **Comparaison de {len(found)} prospects**\n"]
+    for i, name in enumerate(ranking, start=1):
+        p = next((x for x in found if x["name"] == name), None)
+        if not p:
+            continue
+        emoji = TEMPERATURE_EMOJI.get(p["temperature"], "")
+        lines.append(f"{i}. **{name}** — score {p['score'] if p['score'] is not None else '?'}/100 {emoji}")
+    lines.append(f"\n💡 {recommendation}")
+    if not_found:
+        lines.append(f"\n_Non trouvé(s) en base : {', '.join(not_found)}_")
+
+    state["response"] = "\n".join(lines)
     state["suggested_actions"] = []
     return state
 

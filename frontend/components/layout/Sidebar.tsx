@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image"; 
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import NotificationBell from "@/components/layout/NotificationBell";
 
 
 import {
@@ -79,6 +80,9 @@ export default function Sidebar() {
         <div>
           <div className="font-semibold text-sm">BelgoData</div>
           <div className="text-xs text-white/50">Belgique</div>
+        </div>
+        <div className="ml-auto">
+          <NotificationBell />
         </div>
       </div>
 

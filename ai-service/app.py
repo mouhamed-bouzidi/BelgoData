@@ -13,7 +13,7 @@ app = Flask(__name__)
 # Configure CORS to allow requests from frontend
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:3000", "http://localhost:*", "127.0.0.1:*"],
+        "origins": ["http://localhost:3000", "http://localhost:*", "http://127.0.0.1:*"],
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
@@ -57,6 +57,7 @@ def scrape_osm():
         "total_found": len(prospects),
         "inserted": summary["inserted"],
         "skipped_duplicates": summary["skipped"],
+        "new_prospects": summary.get("new_prospects", []),
     }), 200
 
 # ... (le reste de tes imports et routes reste inchangé)
@@ -87,6 +88,7 @@ def agent_chat():
         "postal_code": None,
         "category": None,
         "company_name": None,
+        "company_names": None,
         "user_id": user_id,
         "user_name": user_name,
         "scraped_count": None,
@@ -94,6 +96,8 @@ def agent_chat():
         "response": None,
         "suggested_actions": None,
         "report": None,
+        "email_draft": None,
+        "comparison": None,
     }
 
     result = agent_graph.invoke(initial_state)
@@ -109,8 +113,11 @@ def agent_chat():
         "scraped_count": result.get("scraped_count"),
         "report": result.get("report"),
         "session_id": result.get("session_id"),
+        "email_draft": result.get("email_draft"),
+        "comparison": result.get("comparison"),
     }), 200
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT_AI", 5001))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    debug_mode = os.getenv("FLASK_ENV", "production") == "development"
+    app.run(host="0.0.0.0", port=port, debug=debug_mode)

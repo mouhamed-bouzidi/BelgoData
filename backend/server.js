@@ -15,6 +15,9 @@ const userManagementRoutes = require("./routes/userManagement");
 const profileRoutes = require("./routes/profile");
 const conversationsRoutes = require("./routes/conversations");
 const scrapingRoutes = require("./routes/scraping");
+const watchedSearchesRoutes = require("./routes/watchedSearches");
+const notificationsRoutes = require("./routes/notifications");
+const { startWatchScheduler } = require("./cron/watchScheduler");
 
 
 const http = require("http");
@@ -41,6 +44,8 @@ app.use("/api/settings", settingsRoutes);
 app.use("/api/auth/users", userManagementRoutes);
 app.use('/api/profile', profileRoutes);
 app.use("/api/scraping", scrapingRoutes);
+app.use("/api/watched-searches", watchedSearchesRoutes);
+app.use("/api/notifications", notificationsRoutes);
 
 
 const PORT = process.env.PORT_BACKEND || 5000;
@@ -50,4 +55,5 @@ connectDB().then(() => {
   server.listen(PORT, () => {
     console.log(`🚀 Backend Express démarré sur le port ${PORT}`);
   });
+  startWatchScheduler();
 });

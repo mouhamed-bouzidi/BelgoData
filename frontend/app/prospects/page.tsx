@@ -22,6 +22,7 @@ type Prospect = {
   website?: string;
   source?: string;
   score?: number;
+  temperature?: "chaud" | "tiede" | "froid";
   createdAt?: string;
   createdBy?: { userName?: string };
 };
@@ -597,6 +598,13 @@ export default function ProspectsPage() {
                       <span className={`px-2 py-1 rounded-md text-[11px] font-extrabold ${scoreColor}`}>
                         {hasScore ? `${p.score}/100` : "—"}
                       </span>
+                      {p.temperature && (
+                        <span className="ml-1.5" title={p.temperature}>
+                          {p.temperature === "chaud" && "🔥"}
+                          {p.temperature === "tiede" && "🌤️"}
+                          {p.temperature === "froid" && "❄️"}
+                        </span>
+                      )}
                     </td>
 
                     <td className="p-4 text-[11px] font-medium text-slate-400 whitespace-pre-line">

@@ -10,6 +10,8 @@ from agent.nodes import (
     delete_all_prospects_node,
     general_node,
     generate_report_node,
+    generate_email_node,
+    compare_prospects_node,
     clarify_node,
 )
 
@@ -29,6 +31,10 @@ def route_by_intent(state: AgentState) -> str:
         return "delete_all"
     if intent == "report":
         return "generate_report"
+    if intent == "email":
+        return "generate_email"
+    if intent == "compare":
+        return "compare"
     if intent == "clarify":
         return "clarify"
     return "general"
@@ -46,6 +52,8 @@ def build_agent_graph():
     graph.add_node("delete_all", delete_all_prospects_node)
     graph.add_node("general", general_node)
     graph.add_node("generate_report", generate_report_node)
+    graph.add_node("generate_email", generate_email_node)
+    graph.add_node("compare", compare_prospects_node)
     graph.add_node("clarify", clarify_node)
 
     graph.set_entry_point("classify_intent")
@@ -63,6 +71,8 @@ def build_agent_graph():
             "delete": "delete",
             "delete_all": "delete_all",
             "generate_report": "generate_report",
+            "generate_email": "generate_email",
+            "compare": "compare",
             "general": "general",
             "clarify": "clarify",
         },
@@ -76,6 +86,8 @@ def build_agent_graph():
     graph.add_edge("delete", END)
     graph.add_edge("delete_all", END)
     graph.add_edge("generate_report", END)
+    graph.add_edge("generate_email", END)
+    graph.add_edge("compare", END)
     graph.add_edge("general", END)
     graph.add_edge("clarify", END)
 

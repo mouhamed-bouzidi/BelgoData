@@ -49,6 +49,7 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
 
     inserted = 0
     skipped = 0
+    new_prospects = []
 
     for p in prospects:
         existing = collection.find_one({"osm_id": p["osm_id"], "source": "osm"})
@@ -64,6 +65,11 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
 
         collection.insert_one(p)
         inserted += 1
+        new_prospects.append({
+            "name": p.get("name"),
+            "category": p.get("category"),
+            "city": (p.get("address") or {}).get("city"),
+        })
 
         
     # Sauvegarde la session en base
@@ -79,4 +85,4 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
         "createdAt": datetime.now(timezone.utc).isoformat(),
     })
 
-    return {"inserted": inserted, "skipped": skipped, "session_id": session_id}
+    return {"inserted": inserted, "skipped": skipped, "session_id": session_id, "new_prospects": new_prospects}

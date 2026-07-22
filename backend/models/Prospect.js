@@ -30,6 +30,7 @@ const ProspectSchema = new mongoose.Schema(
 
     rating: { type: Number, default: null },
     score: { type: Number, default: null }, // calculé plus tard par le RAG
+    temperature: { type: String, enum: ["chaud", "tiede", "froid", null], default: null }, // score de chaleur commercial (hot/warm/cold)
     createdBy: {
       userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       userName: { type: String, default: null },
