@@ -1,28 +1,39 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import axios from "axios";
 import { useAuth } from "@/context/AuthContext";
-import { 
-  Bot, 
-  Sparkles, 
-  Send, 
-  RefreshCw, 
-  Building2, 
-  ExternalLink, 
-  MapPin, 
-  Phone, 
-  Mail, 
-  CheckCircle2, 
-  XCircle, 
+import {
+  Bot,
+  Sparkles,
+  Send,
+  Plus,
+  Building2,
+  ExternalLink,
+  MapPin,
+  Phone,
+  Mail,
+  CheckCircle2,
+  XCircle,
   Trash2,
-  FileText, 
-  ChevronRight, 
-  Info 
+  FileText,
+  ChevronRight,
+  Info,
+  Copy,
+  Check,
+  History,
+  X,
+  MessageSquarePlus,
+  Flame,
+  Snowflake,
+  CloudSun,
 } from "lucide-react";
 
+/* ─────────────────────────────────────────────────────────────
+   TYPES (inchangés)
+   ───────────────────────────────────────────────────────────── */
 interface Message {
   role: "user" | "agent";
   content: string;
@@ -33,7 +44,6 @@ interface Message {
   prospectsSample?: ScrapedProspect[];
   scrapedCount?: number;
 }
-
 interface ScrapedProspect {
   name?: string;
   category?: string;
@@ -42,18 +52,15 @@ interface ScrapedProspect {
   email?: string | null;
   website?: string | null;
 }
-
 interface ScrapeResults {
   count: number;
   prospects: ScrapedProspect[];
 }
-
 interface EmailDraft {
   subject: string;
   body: string;
   prospect_id: string;
 }
-
 interface Report {
   _id: string;
   prospect_id: string;
@@ -73,7 +80,6 @@ interface Report {
   temperature?: "chaud" | "tiede" | "froid";
   temperature_reason?: string;
 }
-
 interface ConversationSummary {
   _id: string;
   title: string;
@@ -84,7 +90,7 @@ interface ConversationSummary {
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 const AI_URL = process.env.NEXT_PUBLIC_AI_URL || "http://localhost:5001";
 
-const defaultMessageContent = 
+const defaultMessageContent =
   "Je suis votre assistant de prospection intelligent spécialisé sur le marché belge. Voici ce que nous pouvons faire ensemble :\n\n" +
   "✦ Recherche ciblée : Trouvez des entreprises par secteur et code postal.\n" +
   "✦ Analyse de données : Générez des bilans de prospection automatisés.\n" +
@@ -96,24 +102,100 @@ const defaultActions = [
   "Pharmacies à 5000 Namur",
 ];
 
+/* ─────────────────────────────────────────────────────────────
+   Helpers UI (locaux, purement visuels)
+   ───────────────────────────────────────────────────────────── */
+function TemperatureBadge({
+  temperature,
+  reason,
+  size = "sm",
+}: {
+  temperature?: "chaud" | "tiede" | "froid";
+  reason?: string;
+  size?: "sm" | "md";
+}) {
+  if (!temperature) return null;
+  const map = {
+    chaud: {
+      label: "Chaud",
+      Icon: Flame,
+      cls: "bg-indigo-600 text-white",
+    },
+    tiede: {
+      label: "Tiède",
+      Icon: CloudSun,
+      cls: "bg-indigo-100 text-indigo-700",
+    },
+    froid: {
+      label: "Froid",
+      Icon: Snowflake,
+      cls: "bg-slate-100 text-slate-600",
+    },
+  } as const;
+  const { label, Icon, cls } = map[temperature];
+  const sizes =
+    size === "md" ? "text-xs px-2.5 py-1 gap-1.5" : "text-[10px] px-2 py-0.5 gap-1";
+  return (
+    <span
+      title={reason}
+      className={`inline-flex items-center rounded-full font-semibold uppercase tracking-wider ${cls} ${sizes}`}
+    >
+      <Icon size={size === "md" ? 12 : 10} />
+      {label}
+    </span>
+  );
+}
+
+function ScoreRing({ score }: { score: number }) {
+  const tone =
+    score >= 70
+      ? "text-indigo-600 bg-indigo-50 border-indigo-200"
+      : score >= 50
+        ? "text-amber-600 bg-amber-50 border-amber-200"
+        : "text-rose-600 bg-rose-50 border-rose-200";
+  return (
+    <div
+      className={`min-w-[60px] rounded-xl border p-2 text-center shadow-sm ${tone}`}
+      aria-label={`Score ${score} sur 100`}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wider opacity-70">
+        Score
+      </div>
+      <div className="text-xl font-black leading-none mt-0.5">{score}</div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Page
+   ───────────────────────────────────────────────────────────── */
 export default function AgentPage() {
   function nowTime() {
-    return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
+    return new Date().toLocaleTimeString("fr-BE", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   const { user, token } = useAuth();
   const avatarUrl = user?.avatarUrl;
   const canChat = user ? user.role !== "Viewer" : false;
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
-  const [activeScrapeResults, setActiveScrapeResults] = useState<ScrapeResults | null>(null);
+  const [activeScrapeResults, setActiveScrapeResults] =
+    useState<ScrapeResults | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const userName = user?.name || "Utilisateur";
   const [greeting] = useState(() => {
@@ -125,10 +207,14 @@ export default function AgentPage() {
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
   }, [token]);
 
+  /* ── Chargement conversations (inchangé) ── */
   const loadConversations = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await axios.get(`${API_URL}/api/conversations`, getAuthConfig());
+      const res = await axios.get(
+        `${API_URL}/api/conversations`,
+        getAuthConfig(),
+      );
       const data: ConversationSummary[] = res.data || [];
       setConversations(data);
       if (data.length > 0) {
@@ -136,14 +222,17 @@ export default function AgentPage() {
         setConversationId(conv._id);
         if (conv.messages && conv.messages.length > 0) {
           setMessages(conv.messages);
-          localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages));
+          localStorage.setItem(
+            "agent_chat_history",
+            JSON.stringify(conv.messages),
+          );
         }
       } else {
         const title = `Conversation IA - ${new Date().toLocaleDateString("fr-FR")}`;
         const createRes = await axios.post(
           `${API_URL}/api/conversations`,
           { title, messages: [] },
-          getAuthConfig()
+          getAuthConfig(),
         );
         setConversationId(createRes.data._id);
         setConversations([createRes.data]);
@@ -159,12 +248,14 @@ export default function AgentPage() {
       await axios.put(
         `${API_URL}/api/conversations/${conversationId}`,
         { messages: updatedMessages },
-        getAuthConfig()
+        getAuthConfig(),
       );
       setConversations((prev) =>
         prev.map((conv) =>
-          conv._id === conversationId ? { ...conv, messages: updatedMessages } : conv
-        )
+          conv._id === conversationId
+            ? { ...conv, messages: updatedMessages }
+            : conv,
+        ),
       );
     } catch (error) {
       console.error("Erreur sauvegarde conversation :", error);
@@ -178,7 +269,7 @@ export default function AgentPage() {
       const createRes = await axios.post(
         `${API_URL}/api/conversations`,
         { title, messages: [] },
-        getAuthConfig()
+        getAuthConfig(),
       );
       const newConversation: ConversationSummary = createRes.data;
       setConversationId(newConversation._id);
@@ -194,14 +285,20 @@ export default function AgentPage() {
     setConversationId(conv._id);
     setMessages(conv.messages || []);
     setShowHistory(false);
-    localStorage.setItem("agent_chat_history", JSON.stringify(conv.messages || []));
+    localStorage.setItem(
+      "agent_chat_history",
+      JSON.stringify(conv.messages || []),
+    );
   };
 
   const deleteConversation = async (id: string) => {
     if (!token) return;
     if (!confirm("Confirmer la suppression de cette conversation ?")) return;
     try {
-      await axios.delete(`${API_URL}/api/conversations/${id}`, getAuthConfig());
+      await axios.delete(
+        `${API_URL}/api/conversations/${id}`,
+        getAuthConfig(),
+      );
       setConversations((prev) => prev.filter((c) => c._id !== id));
       if (conversationId === id) {
         localStorage.removeItem("agent_chat_history");
@@ -221,6 +318,7 @@ export default function AgentPage() {
     }
   };
 
+  /* ── Effects (inchangés) ── */
   useEffect(() => {
     const loadChatHistory = () => {
       if (typeof window !== "undefined") {
@@ -238,7 +336,6 @@ export default function AgentPage() {
           }
         }
       }
-      
       setMessages([
         {
           role: "agent",
@@ -249,18 +346,12 @@ export default function AgentPage() {
       ]);
       setMounted(true);
     };
-
     loadChatHistory();
   }, []);
 
   useEffect(() => {
     if (!mounted || !token) return;
-
-    const fetchConversations = async () => {
-      await loadConversations();
-    };
-
-    fetchConversations();
+    loadConversations();
   }, [mounted, token, loadConversations]);
 
   useEffect(() => {
@@ -275,14 +366,34 @@ export default function AgentPage() {
     }
   }, [messages, mounted]);
 
+  // Auto-focus du composeur
+  useEffect(() => {
+    if (mounted && canChat) textareaRef.current?.focus();
+  }, [mounted, canChat, conversationId]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+  }, [input]);
+
+  /* ── Envoi message (inchangé fonctionnellement) ── */
   async function sendMessage(text: string) {
     if (!canChat) {
-      alert("Vous n'avez pas l'accès pour discuter avec le chat. Contactez l'administrateur.");
+      alert(
+        "Vous n'avez pas l'accès pour discuter avec le chat. Contactez l'administrateur.",
+      );
       return;
     }
     if (!text.trim()) return;
 
-    const userMessage: Message = { role: "user", content: text, timestamp: nowTime() };
+    const userMessage: Message = {
+      role: "user",
+      content: text,
+      timestamp: nowTime(),
+    };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput("");
@@ -291,7 +402,10 @@ export default function AgentPage() {
     try {
       const res = await axios.post(`${AI_URL}/agent/chat`, {
         message: text,
-        history: updatedMessages.map((m) => ({ role: m.role, content: m.content })),
+        history: updatedMessages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
         userId: user?.id,
         userName: user?.name,
       });
@@ -328,18 +442,30 @@ export default function AgentPage() {
         ...prev,
         {
           role: "agent",
-          content: "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
+          content:
+            "Désolé, un problème de connexion est survenu avec le service IA. Vérifiez que votre backend est actif.",
           timestamp: nowTime(),
         },
       ]);
     } finally {
       setLoading(false);
+      textareaRef.current?.focus();
     }
   }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     sendMessage(input);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey || true)) {
+      // Enter simple = envoyer / Shift+Enter = nouvelle ligne
+      if (!e.shiftKey) {
+        e.preventDefault();
+        sendMessage(input);
+      }
+    }
   }
 
   async function resetConversation() {
@@ -356,493 +482,742 @@ export default function AgentPage() {
       },
     ]);
     setActiveReport(null);
-    if (!newConversationId) {
-      setConversationId(null);
+    if (!newConversationId) setConversationId(null);
+  }
+
+  async function copyMessage(text: string, index: number) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 1500);
+    } catch (e) {
+      console.error(e);
     }
   }
 
-  // Extrait les dernières actions suggérées du flux pour les afficher proprement en bas
   const lastMessage = messages[messages.length - 1];
-  const currentSuggestions = lastMessage?.role === "agent" ? lastMessage.suggestedActions : [];
+  const currentSuggestions =
+    lastMessage?.role === "agent" ? lastMessage.suggestedActions : [];
+  const isEmpty = useMemo(
+    () =>
+      messages.length <= 1 &&
+      (messages[0]?.content === defaultMessageContent || messages.length === 0),
+    [messages],
+  );
 
+  /* ─────────────────────────────────────────────────────────── */
   return (
-    <div className="h-screen bg-slate-50 flex flex-col font-sans overflow-hidden">
-      
-      {/* HEADER PRINCIPAL */}
-      <header className="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl overflow-hidden border border-slate-200/80 bg-slate-100 shadow-sm shrink-0 relative">
-            {avatarUrl ? (
-              <Image src={avatarUrl} alt="Avatar utilisateur" fill sizes="44px" className="object-cover" />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-700 text-sm font-bold">
-                {user?.name?.slice(0, 2).toUpperCase() || "?"}
-              </div>
-            )}
+    <div className="h-screen bg-[#f7f6fb] flex font-sans overflow-hidden text-slate-800 antialiased">
+      {/* ══ SIDEBAR CONVERSATIONS ══ */}
+      <aside
+        className={`hidden md:flex flex-col shrink-0 border-r border-slate-200/70 bg-white transition-all duration-300 ${
+          showHistory ? "w-72" : "w-0 overflow-hidden"
+        }`}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+              <History size={15} />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900 leading-tight">
+                Historique
+              </p>
+              <p className="text-[11px] text-slate-500 leading-tight">
+                {conversations.length} conversation
+                {conversations.length > 1 ? "s" : ""}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
-              <span className="bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-600 bg-clip-text text-transparent">
-                {greeting}, {userName}
-              </span>
-              <Sparkles size={20} className="text-indigo-500 animate-pulse" />
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Assistant IA connecté à <span className="font-semibold text-indigo-600">BelgoData</span>
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowHistory((prev) => !prev)}
-            className="text-xs font-semibold text-indigo-600 border border-indigo-100 bg-white px-3 py-2 rounded-xl shadow-sm hover:bg-indigo-50 transition"
+            onClick={() => setShowHistory(false)}
+            aria-label="Fermer l'historique"
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-md hover:bg-slate-100 transition"
           >
-            Historique
+            <X size={16} />
           </button>
+        </div>
+
+        <div className="px-3 pt-3">
           <button
             onClick={resetConversation}
-            className="flex items-center gap-2 text-xs font-medium border border-slate-200 bg-white text-slate-600 px-3.5 py-2 rounded-xl shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl shadow-sm shadow-indigo-600/20 transition active:scale-[0.98]"
           >
-            <RefreshCw size={14} />
-            Nouvelle session
+            <MessageSquarePlus size={15} />
+            Nouvelle conversation
           </button>
         </div>
-      </header>
 
-      {/* ZONE DE TRAVAIL (2 Colonnes) */}
-      {user?.role === "Viewer" && (
-        <div className="px-8 py-3 bg-rose-50 border-b border-rose-100 text-rose-800 text-sm">
-          Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.
-        </div>
-      )}
-      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
-        
-        {/* COLONNE CHAT */}
-        <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${(activeReport || activeScrapeResults) ? "w-7/12" : "w-full"}`}>
-          
-          {/* Fil de discussion */}
-          <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-slate-50/50 to-white">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex gap-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                
-                {/* Avatar Agent */}
-                {msg.role === "agent" && (
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
-                    <Bot size={16} />
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+          {conversations.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-8 px-4">
+              Vos conversations apparaîtront ici.
+            </p>
+          ) : (
+            conversations.map((conv) => {
+              const isActive = conv._id === conversationId;
+              return (
+                <div
+                  key={conv._id}
+                  className={`group rounded-xl border transition-all ${
+                    isActive
+                      ? "bg-indigo-50 border-indigo-200"
+                      : "bg-transparent border-transparent hover:bg-slate-50 hover:border-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-1 px-2 py-2">
+                    <button
+                      onClick={() => loadConversation(conv)}
+                      className="flex-1 text-left min-w-0"
+                    >
+                      <div
+                        className={`text-sm font-semibold truncate ${
+                          isActive ? "text-indigo-700" : "text-slate-700"
+                        }`}
+                      >
+                        {conv.title}
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate">
+                        {new Date(conv.updatedAt).toLocaleDateString("fr-FR", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => deleteConversation(conv._id)}
+                      aria-label="Supprimer la conversation"
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </aside>
 
-                <div className={`max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                  {/* Bulle de texte */}
+      {/* ══ COLONNE PRINCIPALE ══ */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* HEADER */}
+        <header className="bg-white/80 backdrop-blur border-b border-slate-200/70 px-6 py-3 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            {!showHistory && (
+              <button
+                onClick={() => setShowHistory(true)}
+                aria-label="Ouvrir l'historique"
+                className="hidden md:flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-200 text-slate-500 hover:text-indigo-600 transition shrink-0"
+              >
+                <History size={16} />
+              </button>
+            )}
+            <div className="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 relative">
+              {avatarUrl ? (
+                <Image
+                  src={avatarUrl}
+                  alt="Avatar utilisateur"
+                  fill
+                  sizes="40px"
+                  className="object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center text-indigo-700 text-sm font-bold">
+                  {user?.name?.slice(0, 2).toUpperCase() || "?"}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-[15px] font-bold tracking-tight text-slate-900 truncate">
+                {greeting}, {userName}
+              </h1>
+              <p className="text-[11px] text-slate-500 flex items-center gap-1.5 truncate">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                Assistant IA connecté à{" "}
+                <span className="font-semibold text-indigo-600">BelgoData</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={resetConversation}
+              className="flex items-center gap-1.5 text-xs font-semibold border border-slate-200 bg-white text-slate-600 px-3 py-2 rounded-lg hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition active:scale-95"
+            >
+              <Plus size={14} />
+              Nouvelle session
+            </button>
+          </div>
+        </header>
+
+        {/* BANNIÈRE VIEWER */}
+        {user?.role === "Viewer" && (
+          <div className="px-6 py-2.5 bg-amber-50 border-b border-amber-100 text-amber-800 text-xs font-medium flex items-center gap-2">
+            <Info size={14} />
+            Vous n&apos;avez pas l&apos;accès pour discuter avec le chat.
+            Contactez l&apos;administrateur.
+          </div>
+        )}
+
+        {/* ZONE DE TRAVAIL */}
+        <div className="flex-1 flex overflow-hidden p-4 gap-4">
+          {/* ── COLONNE CHAT ── */}
+          <div
+            className={`bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${
+              activeReport || activeScrapeResults ? "w-7/12" : "w-full"
+            }`}
+          >
+            {/* Fil de discussion */}
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-5 scroll-smooth"
+            >
+              {/* Empty state riche */}
+              {isEmpty && (
+                <div className="max-w-2xl mx-auto text-center py-10 space-y-6 animate-[fadeIn_.4s_ease-out]">
+                  <div className="inline-flex w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                    <Bot size={26} />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-bold text-slate-900">
+                      Prêt à prospecter ?
+                    </h2>
+                    <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed whitespace-pre-line">
+                      {defaultMessageContent}
+                    </p>
+                  </div>
+                  <div className="grid sm:grid-cols-3 gap-2 pt-2">
+                    {defaultActions.map((a) => (
+                      <button
+                        key={a}
+                        onClick={() => sendMessage(a)}
+                        disabled={!canChat}
+                        className="text-left text-xs bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 p-3 rounded-xl transition group disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Sparkles
+                          size={13}
+                          className="text-indigo-500 mb-1.5 group-hover:scale-110 transition"
+                        />
+                        <div className="font-semibold text-slate-700 leading-snug">
+                          {a}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Messages */}
+              {!isEmpty &&
+                messages.map((msg, i) => (
                   <div
-                    className={`px-4 py-3 rounded-2xl text-[14px] leading-relaxed shadow-sm ${
-                      msg.role === "user"
-                        ? "bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-none font-medium"
-                        : "bg-white border border-slate-100 text-slate-800 rounded-tl-none whitespace-pre-line"
+                    key={i}
+                    className={`group flex gap-3 animate-[fadeIn_.25s_ease-out] ${
+                      msg.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
-                    {msg.content}
-                  </div>
+                    {msg.role === "agent" && (
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shadow-sm shrink-0 mt-0.5">
+                        <Bot size={15} />
+                      </div>
+                    )}
 
-                  {/* Bouton de rappel de rapport contextuel */}
-                  {msg.report && (
-                    <button
-                      onClick={() => setActiveReport(msg.report!)}
-                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-xs text-indigo-600 font-medium hover:bg-indigo-100/70 transition-colors"
+                    <div
+                      className={`max-w-[78%] flex flex-col ${
+                        msg.role === "user" ? "items-end" : "items-start"
+                      }`}
                     >
-                      <Building2 size={13} />
-                      Ouvrir le bilan de {msg.report.name}
-                      {msg.report.temperature && (
-                        <span>
-                          {msg.report.temperature === "chaud" && "🔥"}
-                          {msg.report.temperature === "tiede" && "🌤️"}
-                          {msg.report.temperature === "froid" && "❄️"}
+                      <div
+                        className={`px-4 py-2.5 text-[14px] leading-relaxed ${
+                          msg.role === "user"
+                            ? "bg-indigo-600 text-white rounded-2xl rounded-tr-md font-medium shadow-sm"
+                            : "text-slate-800 whitespace-pre-line"
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+
+                      {/* Actions contextuelles sur la bulle */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {msg.report && (
+                          <button
+                            onClick={() => setActiveReport(msg.report!)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[11px] text-indigo-700 font-semibold hover:bg-indigo-100 transition"
+                          >
+                            <Building2 size={12} />
+                            Bilan de {msg.report.name}
+                            <TemperatureBadge
+                              temperature={msg.report.temperature}
+                            />
+                          </button>
+                        )}
+
+                        {msg.emailDraft && (
+                          <button
+                            onClick={() =>
+                              navigator.clipboard.writeText(
+                                `Objet : ${msg.emailDraft!.subject}\n\n${msg.emailDraft!.body}`,
+                              )
+                            }
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[11px] text-indigo-700 font-semibold hover:bg-indigo-100 transition"
+                          >
+                            <FileText size={12} />
+                            Copier l&apos;email
+                          </button>
+                        )}
+
+                        {msg.prospectsSample &&
+                          msg.prospectsSample.length > 0 && (
+                            <button
+                              onClick={() =>
+                                setActiveScrapeResults({
+                                  count:
+                                    msg.scrapedCount ??
+                                    msg.prospectsSample!.length,
+                                  prospects: msg.prospectsSample!,
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-50 border border-indigo-100 rounded-lg text-[11px] text-indigo-700 font-semibold hover:bg-indigo-100 transition"
+                            >
+                              <Building2 size={12} />
+                              {msg.prospectsSample.length} résultat
+                              {msg.prospectsSample.length > 1 ? "s" : ""}
+                            </button>
+                          )}
+                      </div>
+
+                      <div
+                        className={`flex items-center gap-2 mt-1 px-1 ${
+                          msg.role === "user" ? "flex-row-reverse" : ""
+                        }`}
+                      >
+                        <span className="text-[10px] text-slate-400">
+                          {msg.timestamp}
+                        </span>
+                        {msg.role === "agent" && (
+                          <button
+                            onClick={() => copyMessage(msg.content, i)}
+                            aria-label="Copier le message"
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-600 transition"
+                          >
+                            {copiedIndex === i ? (
+                              <Check size={12} />
+                            ) : (
+                              <Copy size={12} />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {msg.role === "user" && (
+                      <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 shrink-0 mt-0.5 relative bg-slate-100">
+                        {avatarUrl ? (
+                          <Image
+                            src={avatarUrl}
+                            alt="Avatar utilisateur"
+                            fill
+                            sizes="32px"
+                            className="object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center text-indigo-700 text-[10px] font-bold">
+                            {user?.name?.slice(0, 2).toUpperCase() || "?"}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+              {/* Shimmer typing */}
+              {loading && (
+                <div className="flex gap-3 justify-start">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Bot size={15} />
+                  </div>
+                  <div className="pt-2">
+                    <span className="text-sm font-medium bg-gradient-to-r from-slate-400 via-indigo-500 to-slate-400 bg-[length:200%_100%] bg-clip-text text-transparent animate-[shimmer_1.8s_linear_infinite]">
+                      Analyse des données belges…
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div ref={scrollRef} />
+            </div>
+
+            {/* ── COMPOSEUR ── */}
+            <div className="border-t border-slate-100 bg-white px-4 md:px-6 py-3 space-y-3 shrink-0">
+              {canChat &&
+                currentSuggestions &&
+                currentSuggestions.length > 0 &&
+                !loading &&
+                !isEmpty && (
+                  <div className="flex flex-wrap gap-2">
+                    {currentSuggestions.map((action) => (
+                      <button
+                        key={action}
+                        onClick={() => sendMessage(action)}
+                        className="text-xs bg-white border border-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full hover:bg-indigo-50 hover:border-indigo-300 transition font-medium flex items-center gap-1.5"
+                      >
+                        <Sparkles size={11} />
+                        {action}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+              {canChat ? (
+                <form
+                  onSubmit={handleSubmit}
+                  className="relative flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-2 focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10 transition"
+                >
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Ex : Boulangeries à 4000 Liège…"
+                    rows={1}
+                    disabled={loading}
+                    className="flex-1 resize-none bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none max-h-[200px] leading-relaxed"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !input.trim()}
+                    aria-label="Envoyer le message"
+                    title="Envoyer (Entrée) · Nouvelle ligne (Maj+Entrée)"
+                    className="h-9 w-9 shrink-0 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm shadow-indigo-600/20 active:scale-95"
+                  >
+                    <Send size={15} />
+                  </button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
+                  <Info size={14} className="text-slate-400" />
+                  Vous n&apos;avez pas l&apos;accès pour discuter avec le chat.
+                  Contactez l&apos;administrateur.
+                </div>
+              )}
+
+              <p className="text-[10px] text-slate-400 text-center">
+                Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne
+              </p>
+            </div>
+          </div>
+
+          {/* ══ PANNEAU BILAN ══ */}
+          {activeReport && (
+            <div className="w-5/12 bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-[slideIn_.3s_ease-out]">
+              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <FileText size={14} />
+                  </div>
+                  <h2 className="font-bold text-slate-800 text-sm">
+                    Fiche prospect qualifiée
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setActiveReport(null)}
+                  aria-label="Fermer le panneau"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                <div className="flex items-start justify-between gap-3 p-4 rounded-xl bg-gradient-to-br from-indigo-50 to-white border border-indigo-100">
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-bold bg-white border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                        {activeReport.category || "Secteur"}
+                      </span>
+                      <TemperatureBadge
+                        temperature={activeReport.temperature}
+                        reason={activeReport.temperature_reason}
+                        size="md"
+                      />
+                    </div>
+                    <h3 className="font-bold text-slate-900 text-lg leading-tight">
+                      {activeReport.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 flex items-center gap-1">
+                      <MapPin size={12} className="text-slate-400" />
+                      {activeReport.address?.street},{" "}
+                      {activeReport.address?.postcode}{" "}
+                      {activeReport.address?.city}
+                    </p>
+                  </div>
+                  <ScoreRing score={activeReport.score} />
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5">
+                  {activeReport.phone && (
+                    <a
+                      href={`tel:${activeReport.phone}`}
+                      className="flex items-center gap-2.5 text-xs text-slate-700 bg-slate-50 hover:bg-indigo-50 p-2.5 rounded-lg border border-slate-100 hover:border-indigo-200 transition"
+                    >
+                      <Phone size={13} className="text-indigo-500" />
+                      <span>{activeReport.phone}</span>
+                    </a>
+                  )}
+                  {activeReport.email && (
+                    <a
+                      href={`mailto:${activeReport.email}`}
+                      className="flex items-center gap-2.5 text-xs text-slate-700 bg-slate-50 hover:bg-indigo-50 p-2.5 rounded-lg border border-slate-100 hover:border-indigo-200 transition"
+                    >
+                      <Mail size={13} className="text-indigo-500" />
+                      <span className="truncate">{activeReport.email}</span>
+                    </a>
+                  )}
+                  {activeReport.website && (
+                    <a
+                      href={activeReport.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-between text-xs text-indigo-700 bg-indigo-50/60 p-2.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition"
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <ExternalLink size={13} />
+                        <span className="truncate font-semibold">
+                          {activeReport.website.replace(/^https?:\/\//, "")}
+                        </span>
+                      </div>
+                      <ChevronRight size={13} />
+                    </a>
+                  )}
+                </div>
+
+                <section className="space-y-2">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <Info size={11} /> Présence en ligne
+                  </h4>
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-700 leading-relaxed">
+                    {activeReport.presence_digitale}
+                  </div>
+                </section>
+
+                <section className="space-y-2">
+                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Résumé de l&apos;analyse
+                  </h4>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {activeReport.analyse}
+                  </p>
+                </section>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-indigo-50/60 border border-indigo-100 p-3 rounded-lg space-y-1.5">
+                    <h4 className="font-bold text-[11px] text-indigo-800 flex items-center gap-1.5">
+                      <CheckCircle2 size={12} />
+                      Points forts
+                    </h4>
+                    <ul className="space-y-1">
+                      {activeReport.forces?.map((f, i) => (
+                        <li
+                          key={i}
+                          className="text-[11px] text-slate-700 leading-snug flex gap-1.5"
+                        >
+                          <span className="text-indigo-500 font-bold select-none">
+                            ›
+                          </span>
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg space-y-1.5">
+                    <h4 className="font-bold text-[11px] text-slate-700 flex items-center gap-1.5">
+                      <XCircle size={12} />
+                      Axes d&apos;amélioration
+                    </h4>
+                    <ul className="space-y-1">
+                      {activeReport.faiblesses?.map((f, i) => (
+                        <li
+                          key={i}
+                          className="text-[11px] text-slate-600 leading-snug flex gap-1.5"
+                        >
+                          <span className="text-slate-400 font-bold select-none">
+                            ›
+                          </span>
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-indigo-950 to-indigo-800 text-slate-100 p-4 rounded-xl space-y-2 shadow-md">
+                  <h4 className="font-bold text-[10px] text-indigo-300 tracking-widest uppercase">
+                    Argumentaire d&apos;approche
+                  </h4>
+                  <p className="text-xs text-indigo-50 leading-relaxed italic">
+                    “{activeReport.argumentaire}”
+                  </p>
+                </div>
+              </div>
+
+              <div className="px-5 py-3 border-t border-slate-100 shrink-0">
+                <a
+                  href={`/rapports/${activeReport._id}`}
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-semibold shadow-sm shadow-indigo-600/20 transition active:scale-[0.98]"
+                >
+                  Rapport d&apos;analyse complet
+                  <ChevronRight size={14} />
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* ══ PANNEAU SCRAPING ══ */}
+          {!activeReport && activeScrapeResults && (
+            <div className="w-5/12 bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-[slideIn_.3s_ease-out]">
+              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                    <Building2 size={14} />
+                  </div>
+                  <h2 className="font-bold text-slate-800 text-sm">
+                    Résultats du scraping
+                  </h2>
+                </div>
+                <button
+                  onClick={() => setActiveScrapeResults(null)}
+                  aria-label="Fermer le panneau"
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                <div className="flex items-center gap-2 text-xs text-slate-600 bg-indigo-50/50 border border-indigo-100 rounded-lg px-3 py-2">
+                  <Sparkles size={13} className="text-indigo-500" />
+                  <span>
+                    <strong className="text-indigo-700">
+                      {activeScrapeResults.count}
+                    </strong>{" "}
+                    profil
+                    {activeScrapeResults.count > 1 ? "s" : ""} ajouté
+                    {activeScrapeResults.count > 1 ? "s" : ""} — aperçu des{" "}
+                    {activeScrapeResults.prospects.length} premiers
+                  </span>
+                </div>
+
+                {activeScrapeResults.prospects.map((p, i) => (
+                  <div
+                    key={i}
+                    className="p-3.5 rounded-xl border border-slate-200 hover:border-indigo-200 hover:shadow-sm transition space-y-1.5 bg-white"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-bold text-slate-900 text-sm leading-tight">
+                        {p.name || "Nom inconnu"}
+                      </h3>
+                      {p.category && (
+                        <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0">
+                          {p.category}
                         </span>
                       )}
-                    </button>
-                  )}
-
-                  {/* Bouton copier pour un email de prospection généré */}
-                  {msg.emailDraft && (
-                    <button
-                      onClick={() =>
-                        navigator.clipboard.writeText(
-                          `Objet : ${msg.emailDraft!.subject}\n\n${msg.emailDraft!.body}`
-                        )
-                      }
-                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-700 font-medium hover:bg-emerald-100/70 transition-colors"
-                    >
-                      <FileText size={13} />
-                      Copier l&apos;email
-                    </button>
-                  )}
-
-                  {/* Bouton de rappel des résultats de scraping */}
-                  {msg.prospectsSample && msg.prospectsSample.length > 0 && (
-                    <button
-                      onClick={() =>
-                        setActiveScrapeResults({
-                          count: msg.scrapedCount ?? msg.prospectsSample!.length,
-                          prospects: msg.prospectsSample!,
-                        })
-                      }
-                      className="mt-2.5 flex items-center gap-2 px-3 py-2 bg-sky-50 border border-sky-100 rounded-xl text-xs text-sky-700 font-medium hover:bg-sky-100/70 transition-colors"
-                    >
-                      <Building2 size={13} />
-                      Voir les {msg.prospectsSample.length} résultat(s) trouvé(s)
-                    </button>
-                  )}
-
-                  <span className="text-[10px] text-slate-400 mt-1.5 px-1">{msg.timestamp}</span>
-                </div>
-
-                {/* Avatar User */}
-                {msg.role === "user" && (
-                  <div className="w-8 h-8 rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 mt-0.5 relative bg-slate-100">
-                    {avatarUrl ? (
-                      <Image src={avatarUrl} alt="Avatar utilisateur" fill sizes="32px" className="object-cover" />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-600 text-[10px] font-bold">
-                        {user?.name?.slice(0, 2).toUpperCase() || "?"}
-                      </div>
-                    )}
+                    </div>
+                    <p className="text-xs text-slate-500 flex items-start gap-1.5">
+                      <MapPin
+                        size={12}
+                        className="text-slate-400 mt-0.5 shrink-0"
+                      />
+                      {[
+                        p.address?.street,
+                        p.address?.postcode,
+                        p.address?.city,
+                      ]
+                        .filter(Boolean)
+                        .join(", ") || "Adresse non renseignée"}
+                    </p>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px] text-slate-500">
+                      {p.phone && (
+                        <span className="inline-flex items-center gap-1">
+                          <Phone size={10} /> {p.phone}
+                        </span>
+                      )}
+                      {p.email && (
+                        <span className="inline-flex items-center gap-1 truncate max-w-[180px]">
+                          <Mail size={10} /> {p.email}
+                        </span>
+                      )}
+                      {p.website && (
+                        <a
+                          href={p.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
+                        >
+                          <ExternalLink size={10} /> Site
+                        </a>
+                      )}
+                      {!p.phone && !p.email && !p.website && (
+                        <span className="italic text-slate-400">
+                          Aucune coordonnée
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
-
-            {/* Indicateur de chargement */}
-            {loading && (
-              <div className="flex gap-4 justify-start animate-pulse">
-                <div className="w-8 h-8 rounded-xl bg-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                  <Bot size={16} />
-                </div>
-                <div className="bg-slate-100 px-4 py-2.5 rounded-2xl rounded-tl-none text-xs text-slate-500 font-medium flex items-center gap-2">
-                  <span className="flex h-1.5 w-1.5 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-indigo-500"></span>
-                  </span>
-                  Analyse des données belges...
-                </div>
-              </div>
-            )}
-
-            <div ref={scrollRef} />
-          </div>
-
-          {/* ZONE ACTIONS & FORMULAIRE BAS DE PAGE */}
-          <div className="border-t border-slate-100 bg-white p-4 space-y-4 shrink-0">
-            
-            {/* Puces d'actions suggérées dynamiques */}
-            {canChat && currentSuggestions && currentSuggestions.length > 0 && !loading && (
-              <div className="flex flex-wrap gap-2 px-1">
-                {currentSuggestions.map((action) => (
-                  <button
-                    key={action}
-                    onClick={() => sendMessage(action)}
-                    className="text-xs bg-slate-50 border border-slate-200 text-slate-600 px-3 py-1.5 rounded-xl hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition-all font-medium flex items-center gap-1.5 shadow-sm"
-                  >
-                    <Sparkles size={12} className="text-indigo-500" />
-                    {action}
-                  </button>
                 ))}
               </div>
-            )}
 
-            {/* Input Form */}
-            {canChat ? (
-              <form onSubmit={handleSubmit} className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Demandez une recherche (ex: Électriciens à Namur 5000)..."
-                  className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-                  disabled={loading}
-                />
-                <button
-                  type="submit"
-                  disabled={loading || !input.trim()}
-                  className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-all shadow-md shadow-indigo-600/10 active:scale-95 shrink-0 flex items-center justify-center"
+              <div className="px-5 py-3 border-t border-slate-100 shrink-0">
+                <a
+                  href="/prospects"
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl text-xs font-semibold shadow-sm shadow-indigo-600/20 transition active:scale-[0.98]"
                 >
-                  <Send size={16} />
-                </button>
-              </form>
-            ) : (
-              <div className="flex items-center gap-2 px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm text-slate-600">
-                <div>Vous n&pos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.</div>
+                  Voir tous les prospects
+                  <ChevronRight size={14} />
+                </a>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* PANNEAU LATÉRAL MODERNE (BILAN) */}
-        {activeReport && (
-          <div className="w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
-            
-            {/* Header du panneau */}
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-indigo-600" />
-                <h2 className="font-bold text-slate-800 text-sm">Fiche Prospect Qualifiée</h2>
-              </div>
-              <button
-                onClick={() => setActiveReport(null)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors text-xs font-semibold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Contenu défilant */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              
-              {/* Carte Identité Majeure */}
-              <div className="flex items-start justify-between bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                    {activeReport.category || "Secteur non défini"}
-                  </span>
-                  <h3 className="font-bold text-slate-900 text-lg leading-tight pt-1">{activeReport.name}</h3>
-                  <p className="text-xs text-slate-500 flex items-center gap-1">
-                    <MapPin size={12} className="text-slate-400" />
-                    {activeReport.address?.street}, {activeReport.address?.postcode} {activeReport.address?.city}
-                  </p>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  {activeReport.temperature && (
-                    <div
-                      className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]"
-                      title={activeReport.temperature_reason}
-                    >
-                      <div className="text-xs text-slate-400 font-medium">Chaleur</div>
-                      <div className="text-xl">
-                        {activeReport.temperature === "chaud" && "🔥"}
-                        {activeReport.temperature === "tiede" && "🌤️"}
-                        {activeReport.temperature === "froid" && "❄️"}
-                      </div>
-                    </div>
-                  )}
-                  {/* Score badge haut niveau */}
-                  <div className="text-center bg-white p-2.5 rounded-xl border border-slate-200/60 shadow-sm min-w-[65px]">
-                    <div className="text-xs text-slate-400 font-medium">Score</div>
-                    <div className={`text-xl font-black ${
-                      activeReport.score >= 70 ? "text-emerald-600" : activeReport.score >= 50 ? "text-amber-500" : "text-rose-500"
-                    }`}>
-                      {activeReport.score}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Grid Contacts rapides */}
-              <div className="grid grid-cols-1 gap-2">
-                {activeReport.phone && (
-                  <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                    <Phone size={14} className="text-slate-400" />
-                    <span>{activeReport.phone}</span>
-                  </div>
-                )}
-                {activeReport.email && (
-                  <div className="flex items-center gap-2.5 text-xs text-slate-600 bg-slate-50/50 p-2.5 rounded-lg border border-slate-100">
-                    <Mail size={14} className="text-slate-400" />
-                    <span className="truncate">{activeReport.email}</span>
-                  </div>
-                )}
-                {activeReport.website && (
-                  <a
-                    href={activeReport.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between text-xs text-indigo-600 bg-indigo-50/30 p-2.5 rounded-lg border border-indigo-100/40 hover:bg-indigo-50/60 transition-colors"
-                  >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <ExternalLink size={14} className="text-indigo-400" />
-                      <span className="truncate font-medium">{activeReport.website.replace(/^https?:\/\//, "")}</span>
-                    </div>
-                    <ChevronRight size={14} className="text-indigo-400 shrink-0" />
-                  </a>
-                )}
-              </div>
-
-              {/* Diagnostic Digital */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <Info size={12} /> Présence en ligne
-                </h4>
-                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/50 text-xs text-slate-700 leading-relaxed font-medium">
-                  {activeReport.presence_digitale}
-                </div>
-              </div>
-
-              {/* Analyse descriptive */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Résumé de l&apos;analyse</h4>
-                <p className="text-xs text-slate-600 leading-relaxed bg-white">{activeReport.analyse}</p>
-              </div>
-
-              {/* Matrice Forces & Faiblesses */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-emerald-50/40 border border-emerald-100/70 p-3.5 rounded-xl space-y-2">
-                  <h4 className="font-bold text-xs text-emerald-800 flex items-center gap-1.5">
-                    <CheckCircle2 size={13} className="text-emerald-600" />
-                    Points forts
-                  </h4>
-                  <ul className="space-y-1.5">
-                    {activeReport.forces?.map((f, i) => (
-                      <li key={i} className="text-[11px] text-slate-600 leading-tight flex items-start gap-1">
-                        <span className="text-emerald-500 font-bold select-none">•</span> {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="bg-rose-50/40 border border-rose-100/70 p-3.5 rounded-xl space-y-2">
-                  <h4 className="font-bold text-xs text-rose-800 flex items-center gap-1.5">
-                    <XCircle size={13} className="text-rose-500" />
-                    Axes d&apos;amélioration
-                  </h4>
-                  <ul className="space-y-1.5">
-                    {activeReport.faiblesses?.map((f, i) => (
-                      <li key={i} className="text-[11px] text-slate-600 leading-tight flex items-start gap-1">
-                        <span className="text-rose-400 font-bold select-none">•</span> {f}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Pitch commercial personnalisé */}
-              <div className="bg-slate-900 text-slate-100 p-4 rounded-xl space-y-2 shadow-sm">
-                <h4 className="font-bold text-xs text-indigo-400 tracking-wide uppercase">Argumentaire d&apos;approche conseillé</h4>
-                <p className="text-xs text-slate-300 leading-relaxed italic">&quot;{activeReport.argumentaire}&quot;</p>
-              </div>
-            </div>
-
-            {/* Lien d'ouverture global */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-              <a
-                href={`/rapports/${activeReport._id}`}
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98]"
-              >
-                Accéder au rapport d&apos;analyse complet
-                <ChevronRight size={14} />
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* PANNEAU LATÉRAL — RÉSULTATS DE SCRAPING */}
-        {!activeReport && activeScrapeResults && (
-          <div className="w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
-            {/* Header du panneau */}
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2">
-                <Building2 size={16} className="text-sky-600" />
-                <h2 className="font-bold text-slate-800 text-sm">Résultats du scraping</h2>
-              </div>
-              <button
-                onClick={() => setActiveScrapeResults(null)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors text-xs font-semibold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Contenu défilant */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-3">
-              <p className="text-xs text-slate-500">
-                {activeScrapeResults.count} nouveau(x) profil(s) ajouté(s) à votre base — aperçu des {activeScrapeResults.prospects.length} premiers résultats :
-              </p>
-
-              {activeScrapeResults.prospects.map((p, i) => (
-                <div
-                  key={i}
-                  className="bg-gradient-to-br from-slate-50 to-slate-100/50 p-4 rounded-xl border border-slate-200/40 space-y-1"
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-slate-900 text-sm leading-tight">{p.name || "Nom inconnu"}</h3>
-                    {p.category && (
-                      <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2 py-0.5 rounded-md uppercase tracking-wider shrink-0">
-                        {p.category}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-500 flex items-center gap-1">
-                    <MapPin size={12} className="text-slate-400" />
-                    {[p.address?.street, p.address?.postcode, p.address?.city].filter(Boolean).join(", ") || "Adresse non renseignée"}
-                  </p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px] text-slate-500">
-                    {p.phone && <span>📞 {p.phone}</span>}
-                    {p.email && <span>✉️ {p.email}</span>}
-                    {p.website && <span className="truncate max-w-[180px]">🌐 {p.website.replace(/^https?:\/\//, "")}</span>}
-                    {!p.phone && !p.email && !p.website && <span className="italic text-slate-400">Aucune coordonnée trouvée</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Lien d'ouverture global */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
-              <a
-                href="/prospects"
-                className="w-full flex items-center justify-center gap-2 bg-slate-900 text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-slate-800 transition-all shadow-sm active:scale-[0.98]"
-              >
-                Voir tous les prospects
-                <ChevronRight size={14} />
-              </a>
-            </div>
-          </div>
-        )}
+        {/* FOOTER */}
+        <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
+          Données collectées via les registres publics et analysées par
+          l&apos;IA BelgoData. Validez les données critiques avant démarchage.
+        </footer>
       </div>
 
-      {showHistory && (
-        <div className="absolute right-6 top-28 z-50 w-80 rounded-3xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">Historique des conversations</p>
-              <p className="text-xs text-slate-500">Chargé pour {userName}</p>
-            </div>
-            <button onClick={() => setShowHistory(false)} className="text-xs text-slate-500 hover:text-slate-900">Fermer</button>
-          </div>
-          <div className="max-h-80 overflow-y-auto px-4 py-3">
-            {conversations.length === 0 ? (
-              <p className="text-sm text-slate-500">Aucune conversation sauvegardée.</p>
-            ) : (
-              <ul className="space-y-2">
-                {conversations.map((conv) => (
-                  <li key={conv._id}>
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => loadConversation(conv)}
-                        className="flex-1 text-left rounded-2xl border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition"
-                      >
-                        <div className="font-semibold">{conv.title}</div>
-                        <div className="text-xs text-slate-400">Mis à jour le {new Date(conv.updatedAt).toLocaleDateString("fr-FR")}</div>
-                      </button>
-
-                      <button
-                        onClick={() => deleteConversation(conv._id)}
-                        title="Supprimer"
-                        className="flex items-center gap-2 text-sm text-rose-700 bg-rose-50/40 hover:bg-rose-100 px-2 py-1 rounded-md border border-rose-100"
-                      >
-                        <Trash2 size={16} strokeWidth={1.8} />
-                        <span>Supprimer</span>
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* FOOTER DISCRET */}
-      <footer className="text-center py-2 text-[10px] text-slate-400 bg-white border-t border-slate-200/60 shrink-0">
-        Données collectées via les registres publics et analysées par l&apos;IA BelgoData. Validez les données critiques avant démarchage.
-      </footer>
+      {/* Animations locales (à ajouter dans tailwind.config si absentes) */}
+      <style jsx global>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateX(12px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        @keyframes shimmer {
+          0% {
+            background-position: 200% 0;
+          }
+          100% {
+            background-position: -200% 0;
+          }
+        }
+      `}</style>
     </div>
   );
 }

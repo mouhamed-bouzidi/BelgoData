@@ -100,7 +100,21 @@ def agent_chat():
         "comparison": None,
     }
 
-    result = agent_graph.invoke(initial_state)
+    try:
+        result = agent_graph.invoke(initial_state)
+    except Exception as exc:
+        return jsonify({
+            "response": "Le service IA est momentanément indisponible. Votre demande n'a pas pu être traitée, mais vous pouvez réessayer dans quelques instants.",
+            "intent": "general",
+            "suggested_actions": [],
+            "prospects_sample": [],
+            "scraped_count": None,
+            "report": None,
+            "session_id": None,
+            "email_draft": None,
+            "comparison": None,
+            "error": str(exc),
+        }), 200
 
     # Nettoyage des prospects_sample pour convertir les ObjectId avant le jsonify
     prospects_sample = serialize_mongo_data(result.get("prospects_sample", []))

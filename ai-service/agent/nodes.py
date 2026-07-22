@@ -3,10 +3,14 @@ import json
 import logging
 import re
 import hashlib
-import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from groq import Groq
+
+try:
+    from groq import Groq
+except ImportError:  # pragma: no cover - exercised in stripped environments
+    Groq = None
+
 from bson import ObjectId
 from bson.errors import InvalidId
 
@@ -21,7 +25,43 @@ from services.deep_scraper import deep_scraping_prospect
 logger = logging.getLogger(__name__)
 
 # Initialisation du client Groq
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = None
+api_key = os.getenv("GROQ_API_KEY")
+if api_key and Groq is not None:
+    try:
+        client = Groq(api_key=api_key)
+    except Exception as exc:
+        logger.warning("Impossible d'initialiser le client Groq : %s", exc)
+else:
+    logger.warning("Aucune GROQ_API_KEY n'est définie ou le package Groq est indisponible, le mode dégradé IA est actif.")
+
+
+def _build_fallback_response(message: str, suggested_actions=None):
+    return {
+        "response": message,
+        "suggested_actions": suggested_actions or [],
+    }
+
+
+def _safe_groq_call(*, model: str, messages: list, temperature: float = 0.0, response_format: Optional[dict] = None, fallback_text: Optional[str] = None):
+    if client is None:
+        raise RuntimeError("Groq client unavailable")
+
+    try:
+        kwargs = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        completion = client.chat.completions.create(**kwargs)
+        return completion.choices[0].message.content.strip()
+    except Exception as exc:
+        logger.warning("Appel Groq échoué : %s", exc)
+        if fallback_text is not None:
+            return fallback_text
+        raise
 
 # =====================================================================
 # SÉCURITÉ SUPPRESSION : constantes
@@ -191,6 +231,61 @@ def _rule_based_delete_extraction(raw_query: str) -> Optional[dict]:
     return result
 
 
+def _heuristic_fallback_intent(raw_query: str) -> dict:
+    """Fallback déterministe pour les requêtes courantes lorsque Groq est indisponible."""
+    q = raw_query.lower()
+
+    postcode_match = re.search(r"\b(\d{4})\b", q)
+    location = postcode_match.group(1) if postcode_match else None
+    if location is None:
+        for city, postcode in BELGIAN_CITY_TO_POSTCODE.items():
+            if re.search(rf"\b{re.escape(city)}\b", q):
+                location = postcode
+                break
+
+    category = None
+    for key in CATEGORY_TAGS.keys():
+        if re.search(rf"\b{re.escape(key)}s?\b", q):
+            category = key
+            break
+    if category is None:
+        for synonym, canonical in CATEGORY_SYNONYMS.items():
+            if re.search(rf"\b{re.escape(synonym)}\b", q):
+                category = canonical
+                break
+
+    if re.search(r"\b(ma base|mes prospects|prospects enregistr|en base de données|déjà scrapé|deja scrapé)\b", q):
+        intent = "search"
+    elif re.search(r"\b(combien|nombre|count)\b", q):
+        intent = "count"
+    elif re.search(r"\b(montre|affiche|liste|voir)\b", q):
+        intent = "list"
+    elif location is not None and category is not None:
+        intent = "scrape"
+    elif category is not None:
+        intent = "scrape"
+    else:
+        intent = "general"
+
+    return {
+        "intent": intent,
+        "category": category,
+        "location": location,
+        "city": None,
+        "company_name": None,
+        "company_names": None,
+        "search": None,
+        "limit": None,
+        "rank": None,
+        "score_min": None,
+        "score_max": None,
+        "has_email": None,
+        "has_website": None,
+        "delete_confirm": None,
+        "delete_all_confirm": None,
+    }
+
+
 def classify_intent_node(state: AgentState) -> AgentState:
     """
     Nœud critique d'analyse d'intention via Groq avec Structured Output.
@@ -301,17 +396,18 @@ Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
 
     for attempt in range(1, max_attempts + 1):
         try:
-            chat_completion = client.chat.completions.create(
+            raw_content = _safe_groq_call(
+                model="llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": prompt_system},
                     {"role": "user", "content": clean_query}
                 ],
-                model="llama-3.3-70b-versatile",
-                temperature=0.0,  # Strict déterminisme pour production
-                response_format={"type": "json_object"}
+                temperature=0.0,
+                response_format={"type": "json_object"},
+                fallback_text='{"intent":"general","location":null,"city":null,"category":null,"company_name":null,"company_names":null,"search":null,"limit":null,"rank":null,"score_min":null,"score_max":null,"has_email":null,"has_website":null,"delete_confirm":false,"delete_all_confirm":null}'
             )
 
-            donnees_extraites = json.loads(chat_completion.choices[0].message.content)
+            donnees_extraites = json.loads(raw_content)
 
             # Validation structurée via Pydantic
             intention_validee = ExtractionIntention(**donnees_extraites)
@@ -341,13 +437,22 @@ Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
 
     if last_error is not None:
         logger.error(f"⚠️ Échec définitif de l'extraction de l'intention après {max_attempts} tentatives : {last_error}")
-        # Le court-circuit de suppression en amont a déjà géré tout verbe de
-        # suppression avant d'arriver ici : un échec à ce stade ne concerne
-        # donc jamais une demande de suppression, "general" est un repli sûr.
-        state["intent"] = "general"
-        state["postal_code"] = None
-        state["category"] = None
+        fallback = _heuristic_fallback_intent(clean_query)
+        state["intent"] = fallback["intent"]
+        state["category"] = fallback["category"]
         state["company_name"] = None
+        state["company_names"] = None
+        state["postal_code"] = fallback["location"]
+        state["city"] = fallback["city"]
+        state["search"] = fallback["search"]
+        state["limit"] = fallback["limit"]
+        state["score_min"] = fallback["score_min"]
+        state["score_max"] = fallback["score_max"]
+        state["rank"] = fallback["rank"]
+        state["has_email"] = fallback["has_email"]
+        state["has_website"] = fallback["has_website"]
+        state["delete_confirm"] = fallback["delete_confirm"]
+        state["delete_all_confirm"] = fallback["delete_all_confirm"]
 
     return state
 
@@ -1022,13 +1127,16 @@ def generate_report_node(state: AgentState) -> AgentState:
         web_context=web_context,
     )
 
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
+    try:
+        raw = _safe_groq_call(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            fallback_text='{"score": 50, "presence_digitale": "Moyenne", "analyse": "Le rapport automatisé est momentanément indisponible. Les données locales restent disponibles pour une première lecture.", "forces": [], "faiblesses": [], "argumentaire": "", "temperature": "tiede", "temperature_reason": "Données partielles en l\'absence du service IA."}'
+        )
+    except Exception:
+        raw = '{"score": 50, "presence_digitale": "Moyenne", "analyse": "Le rapport automatisé est momentanément indisponible. Les données locales restent disponibles pour une première lecture.", "forces": [], "faiblesses": [], "argumentaire": "", "temperature": "tiede", "temperature_reason": "Données partielles en l\'absence du service IA."}'
 
-    raw = completion.choices[0].message.content.strip()
     try:
         analysis = json.loads(raw)
     except json.JSONDecodeError:
@@ -1146,13 +1254,16 @@ def generate_email_node(state: AgentState) -> AgentState:
         analysis_context=analysis_context,
     )
 
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.4,
-    )
+    try:
+        raw = _safe_groq_call(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.4,
+            fallback_text='{"subject": "Collaboration", "body": "Bonjour,\n\nJe vous contacte pour présenter notre plateforme BelgoData et proposer une première discussion autour de vos besoins de prospection.\n\nCordialement,"}'
+        )
+    except Exception:
+        raw = '{"subject": "Collaboration", "body": "Bonjour,\n\nJe vous contacte pour présenter notre plateforme BelgoData et proposer une première discussion autour de vos besoins de prospection.\n\nCordialement,"}'
 
-    raw = completion.choices[0].message.content.strip()
     try:
         email = json.loads(raw)
         subject = email.get("subject", f"Collaboration avec {prospect.get('name')}")
@@ -1229,13 +1340,16 @@ def compare_prospects_node(state: AgentState) -> AgentState:
     )
 
     prompt = COMPARE_PROMPT.format(prospects_context=prospects_context)
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-    )
+    try:
+        raw = _safe_groq_call(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            fallback_text='{"ranking": [], "recommendation": "Classement basé sur les données disponibles en base."}'
+        )
+    except Exception:
+        raw = '{"ranking": [], "recommendation": "Classement basé sur les données disponibles en base."}'
 
-    raw = completion.choices[0].message.content.strip()
     try:
         result = json.loads(raw)
         ranking = result.get("ranking") or [p["name"] for p in sorted(found, key=lambda p: p["score"] or 0, reverse=True)]
@@ -1337,12 +1451,17 @@ def general_node(state: AgentState) -> AgentState:
     Gère les conversations informelles et l'accueil des utilisateurs.
     """
     prompt = GENERAL_PROMPT.format(query=state["user_query"])
-    completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-    )
-    state["response"] = completion.choices[0].message.content.strip()
+    try:
+        raw = _safe_groq_call(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            fallback_text="Le service IA est momentanément indisponible, mais je peux toujours vous aider à lancer une recherche de prospects ou à consulter votre base."
+        )
+    except Exception:
+        raw = "Le service IA est momentanément indisponible, mais je peux toujours vous aider à lancer une recherche de prospects ou à consulter votre base."
+
+    state["response"] = raw.strip()
     state["suggested_actions"] = []
     return state
 
