@@ -659,6 +659,42 @@ def _hash_filter(filter_query: dict, action: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _log_deletion_to_dashboard(db, user_id: str, user_name: Optional[str],
+                                deleted_count: int, filter_query: dict) -> None:
+    """
+    Journalise une suppression déclenchée par l'agent IA dans la collection
+    "deletionlogs" — la même que celle alimentée côté backend Node (modèle
+    Mongoose DeletionLog) pour les suppressions faites depuis l'UI (bouton
+    unitaire / bulk-delete). Ainsi, quelle que soit la voie de suppression
+    (UI ou agent conversationnel), tout apparaît dans le même historique
+    "Logs de suppression" du dashboard utilisateur.
+
+    Distinct de "audit_logs" : audit_logs reste l'audit trail détaillé et
+    propre à l'agent (critères bruts, session_id...), pendant que
+    deletionlogs est le format unifié consommé par le frontend.
+    """
+    try:
+        owner_object_id = ObjectId(user_id)
+    except (InvalidId, TypeError):
+        logging.warning("⚠️ user_id invalide, log de suppression dashboard ignoré: %s", user_id)
+        return
+
+    now = datetime.now(timezone.utc)
+    db["deletionlogs"].insert_one({
+        "userId": owner_object_id,
+        "userName": user_name,
+        "type": "bulk",
+        "prospectId": None,
+        "prospectName": None,
+        "deletedCount": deleted_count,
+        "filter": filter_query,
+        "ip": None,
+        "userAgent": "Agent IA (conversation)",
+        "createdAt": now,
+        "updatedAt": now,
+    })
+
+
 def _create_pending_confirmation(db, session_id: str, user_id: str, action: str,
                                   filter_query: dict, matched_count: int) -> None:
     """
@@ -1018,6 +1054,8 @@ def delete_prospects_node(state: AgentState) -> AgentState:
         "session_id": session_id,
         "created_at": datetime.now(timezone.utc),
     })
+
+    _log_deletion_to_dashboard(db, user_id, state.get("user_name"), result.modified_count, filter_query)
 
     state["prospects_sample"] = []
     state["scraped_count"] = result.modified_count
@@ -1438,6 +1476,8 @@ def delete_all_prospects_node(state: AgentState) -> AgentState:
         "session_id": session_id,
         "created_at": datetime.now(timezone.utc),
     })
+
+    _log_deletion_to_dashboard(db, user_id, state.get("user_name"), result.modified_count, filter_query)
 
     state["prospects_sample"] = []
     state["scraped_count"] = result.modified_count

@@ -31,13 +31,13 @@ export default function UsersPage() {
 
   // Helper pour obtenir la configuration d'authentification avec token actif
   const getAuthConfig = useCallback(() => {
-    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("belgodata_token") : null);
     return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
   }, [token]);
 
   // Fonction de récupération de l'équipe (mémorisée pour éviter les boucles infinies)
   const fetchUsers = useCallback(async () => {
-    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("belgodata_token") : null);
     
     if (!activeToken) {
       console.warn("Pas de token disponible, attente de l'authentification...");

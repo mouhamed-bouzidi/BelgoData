@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const Prospect = require("../models/Prospect");
+const DeletionLog = require("../models/DeletionLog");
 const { calculateGrowthRate } = require("../utils/prospectStats");
 const authMiddleware = require("../middleware/auth");
 const authorizeRoles = require("../middleware/roleMiddleware");
@@ -130,6 +131,19 @@ router.post("/bulk-delete", authMiddleware, authorizeRoles("Administrateur", "Co
     }
 
     const result = await Prospect.deleteMany(filter);
+
+    if (result.deletedCount > 0) {
+      DeletionLog.create({
+        userId: req.user.id,
+        userName: req.user.name,
+        type: "bulk",
+        deletedCount: result.deletedCount,
+        filter,
+        ip: req.ip || req.headers["x-forwarded-for"] || null,
+        userAgent: req.headers["user-agent"] || null,
+      }).catch((err) => console.error("⚠️ Échec enregistrement log de suppression:", err.message));
+    }
+
     res.json({ deletedCount: result.deletedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -370,6 +384,18 @@ router.delete("/:id", authMiddleware, authorizeRoles("Administrateur", "Commerci
     if (!deleted) {
       return res.status(404).json({ error: "Prospect non trouvé" });
     }
+
+    DeletionLog.create({
+      userId: req.user.id,
+      userName: req.user.name,
+      type: "unit",
+      prospectId: deleted._id,
+      prospectName: deleted.name,
+      deletedCount: 1,
+      ip: req.ip || req.headers["x-forwarded-for"] || null,
+      userAgent: req.headers["user-agent"] || null,
+    }).catch((err) => console.error("⚠️ Échec enregistrement log de suppression:", err.message));
+
     res.json({ message: "Prospect supprimé", id: req.params.id });
   } catch (error) {
     res.status(500).json({ error: error.message });

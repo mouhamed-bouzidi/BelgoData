@@ -5,6 +5,7 @@ const User = require("../models/users");
 const Prospect = require("../models/Prospect");
 const ScrapingSession = require("../models/ScrapingSession");
 const LoginHistory = require("../models/LoginHistory");
+const DeletionLog = require("../models/DeletionLog");
 const authMiddleware = require("../middleware/auth");
 const authorizeRoles = require("../middleware/roleMiddleware");
 const { calculateGrowthRate } = require("../utils/prospectStats");
@@ -79,6 +80,7 @@ router.get("/:id/stats", async (req, res) => {
       bySource,
       recent,
       sessionsCount,
+      deletionsCount,
     ] = await Promise.all([
       Prospect.countDocuments(baseMatch),
       Prospect.countDocuments({ ...baseMatch, email: { $regex: /\S/ } }),
@@ -102,6 +104,7 @@ router.get("/:id/stats", async (req, res) => {
       ]),
       Prospect.find(baseMatch).sort({ createdAt: -1 }).limit(5),
       ScrapingSession.countDocuments({ userId }),
+      DeletionLog.countDocuments({ userId }),
     ]);
 
     res.json({
@@ -112,6 +115,7 @@ router.get("/:id/stats", async (req, res) => {
       avgScore: Math.round(avgScoreResult[0]?.avgScore ?? 0),
       hotLeads: hotLeadsCount,
       sessionsCount,
+      deletionsCount,
       trends: { total: calculateGrowthRate(currentTotal, previousTotal) },
       byCategory,
       bySource,
@@ -153,6 +157,24 @@ router.get("/:id/login-history", async (req, res) => {
     ]);
 
     res.json({ total, page: Number(page), limit: Number(limit), results: history });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /:id/deletion-logs - logs de suppression de prospects (unitaire + bulk) d'un utilisateur donné
+router.get("/:id/deletion-logs", async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+    const userId = req.params.id;
+
+    const [logs, total] = await Promise.all([
+      DeletionLog.find({ userId }).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      DeletionLog.countDocuments({ userId }),
+    ]);
+
+    res.json({ total, page: Number(page), limit: Number(limit), results: logs });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

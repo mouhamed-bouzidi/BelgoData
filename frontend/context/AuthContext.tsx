@@ -54,7 +54,7 @@ function isSavedUserSafe(rawUser: string | null): boolean {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     clearLegacyAuthCookies();
@@ -79,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.removeItem("belgodata_user");
       }
     }
+
+    setLoading(false);
   }, []);
 
   function getSafeUser(user: Partial<User>) {

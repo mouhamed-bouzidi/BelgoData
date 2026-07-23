@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import axios from "axios";
 import {
   ArrowLeft,
@@ -13,9 +14,12 @@ import {
   MapPin,
   LogIn,
   Monitor,
+  Trash2,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import KpiCard from "@/components/pages/KpiCard";
+import { parseUserAgent } from "@/components/utils/parseUserAgent";
 import {
   PieChart,
   Pie,
@@ -45,10 +49,21 @@ interface UserStats {
   avgScore: number;
   hotLeads: number;
   sessionsCount: number;
+  deletionsCount: number;
   trends: { total: number };
   byCategory: StatItem[];
   bySource: StatItem[];
   recent: RecentProspect[];
+}
+
+interface DeletionLog {
+  _id: string;
+  type: "unit" | "bulk";
+  prospectName: string | null;
+  deletedCount: number;
+  ip: string | null;
+  userAgent: string | null;
+  createdAt: string;
 }
 
 interface ScrapingSessionLog {
@@ -90,30 +105,12 @@ export default function UserDashboardPage() {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [sessions, setSessions] = useState<ScrapingSessionLog[]>([]);
   const [loginHistory, setLoginHistory] = useState<LoginLog[]>([]);
+  const [deletionLogs, setDeletionLogs] = useState<DeletionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Extrait un libellé simple "Navigateur · OS" à partir du user-agent brut, sans dépendance externe
-  function parseUserAgent(ua: string | null): string {
-    if (!ua) return "Inconnu";
-    const browser =
-      /Edg\//.test(ua) ? "Edge" :
-      /Chrome\//.test(ua) ? "Chrome" :
-      /Firefox\//.test(ua) ? "Firefox" :
-      /Safari\//.test(ua) ? "Safari" :
-      "Navigateur";
-    const os =
-      /Windows/.test(ua) ? "Windows" :
-      /Mac OS/.test(ua) ? "macOS" :
-      /Android/.test(ua) ? "Android" :
-      /iPhone|iPad/.test(ua) ? "iOS" :
-      /Linux/.test(ua) ? "Linux" :
-      "OS inconnu";
-    return `${browser} · ${os}`;
-  }
-
   const getAuthConfig = useCallback(() => {
-    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("token") : null);
+    const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("belgodata_token") : null);
     return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
   }, [token]);
 
@@ -121,14 +118,16 @@ export default function UserDashboardPage() {
     if (!userId) return;
     setLoading(true);
     try {
-      const [statsRes, sessionsRes, loginRes] = await Promise.all([
+      const [statsRes, sessionsRes, loginRes, deletionRes] = await Promise.all([
         axios.get(`${API_URL}/api/auth/users/${userId}/stats`, getAuthConfig()),
         axios.get(`${API_URL}/api/auth/users/${userId}/sessions?limit=20`, getAuthConfig()),
         axios.get(`${API_URL}/api/auth/users/${userId}/login-history?limit=20`, getAuthConfig()),
+        axios.get(`${API_URL}/api/auth/users/${userId}/deletion-logs?limit=20`, getAuthConfig()),
       ]);
       setStats(statsRes.data);
       setSessions(sessionsRes.data?.results || []);
       setLoginHistory(loginRes.data?.results || []);
+      setDeletionLogs(deletionRes.data?.results || []);
     } catch (err) {
       console.error("Erreur chargement dashboard utilisateur :", err);
       setError("Impossible de charger le dashboard de cet utilisateur.");
@@ -199,7 +198,7 @@ export default function UserDashboardPage() {
       </div>
 
       {/* KPI CARDS */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-5">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-5">
         <KpiCard
           icon={Building2}
           label="Prospects trouvés"
@@ -211,6 +210,7 @@ export default function UserDashboardPage() {
         <KpiCard icon={Globe} label="Sites web trouvés" value={stats.websitesCount} color="green" />
         <KpiCard icon={Flame} label="Leads chauds (score ≥ 80)" value={stats.hotLeads} color="orange" />
         <KpiCard icon={History} label="Sessions de scraping" value={stats.sessionsCount} color="pink" />
+        <KpiCard icon={Trash2} label="Suppressions effectuées" value={stats.deletionsCount} color="orange" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -275,9 +275,17 @@ export default function UserDashboardPage() {
 
       {/* LOGS DE SCRAPING */}
       <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-          <History size={16} className="text-gray-400" />
-          <h2 className="font-bold text-gray-900 text-base tracking-tight">Logs de recherche (sessions de scraping)</h2>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <History size={16} className="text-gray-400" />
+            <h2 className="font-bold text-gray-900 text-base tracking-tight">Logs de recherche (sessions de scraping)</h2>
+          </div>
+          <Link
+            href={`/users/${userId}/logs/sessions`}
+            className="flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:underline flex-shrink-0"
+          >
+            Voir tout <ArrowRight size={13} />
+          </Link>
         </div>
 
         {sessions.length === 0 ? (
@@ -318,9 +326,17 @@ export default function UserDashboardPage() {
 
       {/* HISTORIQUE DE CONNEXION */}
       <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-          <LogIn size={16} className="text-gray-400" />
-          <h2 className="font-bold text-gray-900 text-base tracking-tight">Historique de connexion</h2>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <LogIn size={16} className="text-gray-400" />
+            <h2 className="font-bold text-gray-900 text-base tracking-tight">Historique de connexion</h2>
+          </div>
+          <Link
+            href={`/users/${userId}/logs/login-history`}
+            className="flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:underline flex-shrink-0"
+          >
+            Voir tout <ArrowRight size={13} />
+          </Link>
         </div>
 
         {loginHistory.length === 0 ? (
@@ -348,6 +364,72 @@ export default function UserDashboardPage() {
                       <span className="inline-flex items-center gap-1.5">
                         <Monitor size={13} className="text-gray-400" />
                         {parseUserAgent(l.userAgent)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* LOGS DE SUPPRESSION */}
+      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Trash2 size={16} className="text-gray-400" />
+            <h2 className="font-bold text-gray-900 text-base tracking-tight">Logs de suppression</h2>
+          </div>
+          <Link
+            href={`/users/${userId}/logs/deletions`}
+            className="flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:underline flex-shrink-0"
+          >
+            Voir tout <ArrowRight size={13} />
+          </Link>
+        </div>
+
+        {deletionLogs.length === 0 ? (
+          <div className="text-sm text-gray-400 py-10 text-center">
+            Aucune suppression enregistrée pour cet utilisateur.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/20">
+                  <th className="px-6 py-3 font-bold">Date</th>
+                  <th className="px-6 py-3 font-bold">Type</th>
+                  <th className="px-6 py-3 font-bold">Détail</th>
+                  <th className="px-6 py-3 font-bold text-right">Nb supprimés</th>
+                  <th className="px-6 py-3 font-bold">Appareil</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {deletionLogs.map((d) => (
+                  <tr key={d._id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-6 py-3 text-gray-500 text-xs font-medium">
+                      {new Date(d.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
+                    </td>
+                    <td className="px-6 py-3">
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                          d.type === "bulk"
+                            ? "bg-red-50 text-red-700 border-red-200/60"
+                            : "bg-gray-50 text-gray-600 border-gray-200"
+                        }`}
+                      >
+                        {d.type === "bulk" ? "Suppression groupée" : "Unitaire"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-gray-700">
+                      {d.type === "unit" ? (d.prospectName || "Prospect supprimé") : "Suppression par filtre"}
+                    </td>
+                    <td className="px-6 py-3 text-right font-semibold text-red-600">{d.deletedCount}</td>
+                    <td className="px-6 py-3 text-gray-600">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Monitor size={13} className="text-gray-400" />
+                        {parseUserAgent(d.userAgent)}
                       </span>
                     </td>
                   </tr>
