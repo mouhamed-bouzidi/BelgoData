@@ -111,8 +111,8 @@ export default function UserLogsPage() {
 
   if (!isValidType) {
     return (
-      <div className="p-8">
-        <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm max-w-xl">
+      <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen">
+        <div className="bg-red-50/80 backdrop-blur-sm border border-red-200/60 text-red-600 px-4 py-3 rounded-2xl text-sm max-w-xl shadow-sm">
           Type de logs inconnu.
         </div>
       </div>
@@ -120,35 +120,43 @@ export default function UserLogsPage() {
   }
 
   return (
-    <div className="p-8 bg-slate-50/30 min-h-screen space-y-6 animate-fade-in">
-      <div>
+    <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen space-y-6 animate-fade-in">
+      <div className="relative">
+        <div className="absolute -top-6 -left-6 w-40 h-40 bg-violet-200/30 rounded-full blur-3xl pointer-events-none" aria-hidden />
         <button
           onClick={() => router.push(`/users/${userId}`)}
-          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-[#6d5ef0] mb-4"
+          className="relative flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[#6d5ef0] mb-4 transition-colors group"
         >
-          <ArrowLeft size={16} /> Retour au dashboard utilisateur
+          <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" /> Retour au dashboard utilisateur
         </button>
-        <div className="flex items-center gap-2">
-          <Icon size={20} className="text-[#6d5ef0]" />
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">{config.title}</h1>
+        <div className="relative flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#6d5ef0] via-[#7c6ef2] to-[#8b5cf6] text-white shadow-[0_4px_16px_-4px_rgba(109,94,240,0.5)] ring-2 ring-white">
+            <Icon size={18} />
+          </div>
+          <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-slate-900 to-[#6d5ef0] bg-clip-text text-transparent">
+            {config.title}
+          </h1>
         </div>
       </div>
 
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
         {loading ? (
-          <div className="py-16 flex flex-col items-center justify-center space-y-3">
-            <div className="w-8 h-8 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-sm font-medium text-gray-400">Chargement...</p>
+          <div className="py-16 flex flex-col items-center justify-center space-y-4">
+            <div className="relative">
+              <div className="w-10 h-10 border-4 border-violet-100 rounded-full"></div>
+              <div className="w-10 h-10 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin absolute inset-0"></div>
+            </div>
+            <p className="text-sm font-medium text-slate-500">Chargement...</p>
           </div>
         ) : error ? (
-          <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 m-6 rounded-xl text-sm">{error}</div>
+          <div className="bg-red-50/80 border border-red-200/60 text-red-600 px-4 py-3 m-6 rounded-2xl text-sm">{error}</div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-gray-400 py-16 text-center">Aucun log trouvé.</div>
+          <div className="text-sm text-slate-400 py-16 text-center">Aucun log trouvé.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-gray-400 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/20">
+                <tr className="text-slate-500 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider bg-gradient-to-r from-violet-50/40 via-slate-50/30 to-transparent">
                   {logType === "sessions" && (
                     <>
                       <th className="px-6 py-3 font-bold">Date</th>
@@ -177,31 +185,31 @@ export default function UserLogsPage() {
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100/70">
                 {logType === "sessions" &&
                   (rows as ScrapingSessionLog[]).map((s) => (
-                    <tr key={s._id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-6 py-3 text-gray-500 text-xs font-medium">
+                    <tr key={s._id} className="hover:bg-violet-50/30 transition-colors">
+                      <td className="px-6 py-3 text-slate-500 text-xs font-medium">
                         {new Date(s.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
                       </td>
-                      <td className="px-6 py-3 font-semibold text-gray-800">{s.category}</td>
-                      <td className="px-6 py-3 text-gray-600">{s.postalCode}</td>
-                      <td className="px-6 py-3 text-right text-gray-700">{s.totalFound}</td>
+                      <td className="px-6 py-3 font-semibold text-slate-800">{s.category}</td>
+                      <td className="px-6 py-3 text-slate-600">{s.postalCode}</td>
+                      <td className="px-6 py-3 text-right text-slate-700">{s.totalFound}</td>
                       <td className="px-6 py-3 text-right text-emerald-600 font-semibold">{s.inserted}</td>
-                      <td className="px-6 py-3 text-right text-gray-400">{s.skipped}</td>
+                      <td className="px-6 py-3 text-right text-slate-400">{s.skipped}</td>
                     </tr>
                   ))}
 
                 {logType === "login-history" &&
                   (rows as LoginLog[]).map((l) => (
-                    <tr key={l._id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-6 py-3 text-gray-700 font-medium">
+                    <tr key={l._id} className="hover:bg-violet-50/30 transition-colors">
+                      <td className="px-6 py-3 text-slate-700 font-medium">
                         {new Date(l.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
                       </td>
-                      <td className="px-6 py-3 text-gray-500 font-mono text-xs">{l.ip || "—"}</td>
-                      <td className="px-6 py-3 text-gray-600">
+                      <td className="px-6 py-3 text-slate-500 font-mono text-xs">{l.ip || "—"}</td>
+                      <td className="px-6 py-3 text-slate-600">
                         <span className="inline-flex items-center gap-1.5">
-                          <Monitor size={13} className="text-gray-400" />
+                          <Monitor size={13} className="text-violet-400" />
                           {parseUserAgent(l.userAgent)}
                         </span>
                       </td>
@@ -210,28 +218,28 @@ export default function UserLogsPage() {
 
                 {logType === "deletions" &&
                   (rows as DeletionLog[]).map((d) => (
-                    <tr key={d._id} className="hover:bg-slate-50/60 transition-colors">
-                      <td className="px-6 py-3 text-gray-500 text-xs font-medium">
+                    <tr key={d._id} className="hover:bg-violet-50/30 transition-colors">
+                      <td className="px-6 py-3 text-slate-500 text-xs font-medium">
                         {new Date(d.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
                       </td>
                       <td className="px-6 py-3">
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
                             d.type === "bulk"
-                              ? "bg-red-50 text-red-700 border-red-200/60"
-                              : "bg-gray-50 text-gray-600 border-gray-200"
+                              ? "bg-rose-50 text-rose-700 border-rose-200/60"
+                              : "bg-slate-50 text-slate-600 border-slate-200"
                           }`}
                         >
                           {d.type === "bulk" ? "Suppression groupée" : "Unitaire"}
                         </span>
                       </td>
-                      <td className="px-6 py-3 text-gray-700">
+                      <td className="px-6 py-3 text-slate-700">
                         {d.type === "unit" ? (d.prospectName || "Prospect supprimé") : "Suppression par filtre"}
                       </td>
-                      <td className="px-6 py-3 text-right font-semibold text-red-600">{d.deletedCount}</td>
-                      <td className="px-6 py-3 text-gray-600">
+                      <td className="px-6 py-3 text-right font-semibold text-rose-600">{d.deletedCount}</td>
+                      <td className="px-6 py-3 text-slate-600">
                         <span className="inline-flex items-center gap-1.5">
-                          <Monitor size={13} className="text-gray-400" />
+                          <Monitor size={13} className="text-violet-400" />
                           {parseUserAgent(d.userAgent)}
                         </span>
                       </td>
@@ -243,7 +251,7 @@ export default function UserLogsPage() {
         )}
 
         {!loading && !error && rows.length > 0 && (
-          <div className="p-4 bg-white border-t border-slate-100 flex justify-between items-center text-xs text-slate-400 font-semibold">
+          <div className="p-4 bg-gradient-to-r from-violet-50/30 via-white to-transparent border-t border-slate-100 flex justify-between items-center text-xs text-slate-500 font-semibold">
             <p>
               Page {page} sur {totalPages} · {total} résultats
             </p>
@@ -251,29 +259,29 @@ export default function UserLogsPage() {
               <button
                 disabled={page === 1}
                 onClick={() => setPage(1)}
-                className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-30"
+                className="p-1.5 border border-slate-200 rounded-lg hover:bg-violet-50 hover:border-violet-200 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 «
               </button>
               <button
                 disabled={page === 1}
                 onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-30"
+                className="p-1.5 border border-slate-200 rounded-lg hover:bg-violet-50 hover:border-violet-200 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 ‹
               </button>
-              <span className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm">{page}</span>
+              <span className="px-3 py-1.5 bg-gradient-to-br from-[#6d5ef0] to-[#8b5cf6] text-white rounded-lg text-xs font-bold shadow-[0_4px_12px_-2px_rgba(109,94,240,0.4)]">{page}</span>
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
-                className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-30"
+                className="p-1.5 border border-slate-200 rounded-lg hover:bg-violet-50 hover:border-violet-200 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 ›
               </button>
               <button
                 disabled={page >= totalPages}
                 onClick={() => setPage(totalPages)}
-                className="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-30"
+                className="p-1.5 border border-slate-200 rounded-lg hover:bg-violet-50 hover:border-violet-200 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 »
               </button>

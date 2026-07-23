@@ -38,7 +38,7 @@ export default function UsersPage() {
   // Fonction de récupération de l'équipe (mémorisée pour éviter les boucles infinies)
   const fetchUsers = useCallback(async () => {
     const activeToken = token || (typeof window !== "undefined" ? localStorage.getItem("belgodata_token") : null);
-    
+
     if (!activeToken) {
       console.warn("Pas de token disponible, attente de l'authentification...");
       return;
@@ -118,35 +118,41 @@ export default function UsersPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-3">
-        <div className="w-10 h-10 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-sm font-medium text-gray-400">Chargement de l&apos;équipe BelgoData...</p>
+      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/40">
+        <div className="relative">
+          <div className="w-12 h-12 border-4 border-violet-100 rounded-full"></div>
+          <div className="w-12 h-12 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin absolute inset-0"></div>
+        </div>
+        <p className="text-sm font-medium text-slate-500">Chargement de l&apos;équipe BelgoData...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-8 bg-slate-50/30 min-h-screen space-y-8 animate-fade-in">
+    <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen space-y-8 animate-fade-in">
       {/* HEADER */}
-      <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">Gestion des Utilisateurs</h1>
-        <p className="text-sm font-medium text-gray-400 mt-0.5">
+      <div className="relative">
+        <div className="absolute -top-4 -left-4 w-32 h-32 bg-violet-200/30 rounded-full blur-3xl pointer-events-none" aria-hidden />
+        <h1 className="relative text-3xl font-black tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-[#6d5ef0] bg-clip-text text-transparent">
+          Gestion des Utilisateurs
+        </h1>
+        <p className="relative text-sm font-medium text-slate-500 mt-1.5">
           Contrôlez les accès, modifiez les rôles et gérez les membres de la plateforme
         </p>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm max-w-xl">
+        <div className="bg-red-50/80 backdrop-blur-sm border border-red-200/60 text-red-600 px-4 py-3 rounded-2xl text-sm max-w-xl shadow-sm">
           {error}
         </div>
       )}
 
       {/* TABLEAU DES UTILISATEURS */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden transition-all hover:shadow-md">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead>
-              <tr className="text-gray-400 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/20">
+              <tr className="text-slate-500 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider bg-gradient-to-r from-violet-50/40 via-slate-50/30 to-transparent">
                 <th className="px-6 py-4 font-bold">Utilisateur</th>
                 <th className="px-6 py-4 font-bold">Coordonnées</th>
                 <th className="px-6 py-4 font-bold">Rôle</th>
@@ -155,20 +161,20 @@ export default function UsersPage() {
                 <th className="px-6 py-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-slate-100/70">
               {users.map((u) => {
                 const roleColors = {
-                  Administrateur: "bg-purple-50 text-purple-700 border-purple-100",
-                  Commercial: "bg-blue-50 text-blue-700 border-blue-100",
-                  Viewer: "bg-slate-100 text-slate-600 border-slate-200",
+                  Administrateur: "bg-violet-50 text-violet-700 border-violet-200/70 ring-1 ring-violet-100/50",
+                  Commercial: "bg-sky-50 text-sky-700 border-sky-200/70 ring-1 ring-sky-100/50",
+                  Viewer: "bg-slate-50 text-slate-600 border-slate-200 ring-1 ring-slate-100/50",
                 };
 
                 return (
-                  <tr key={u._id} className="hover:bg-slate-50/60 transition-colors group">
+                  <tr key={u._id} className="hover:bg-violet-50/30 transition-all duration-200 group">
                     {/* Identité */}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full overflow-hidden shadow-sm flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-[#6d5ef0] to-[#8b5cf6] text-white">
+                        <div className="w-10 h-10 rounded-2xl overflow-hidden shadow-[0_4px_12px_-2px_rgba(109,94,240,0.4)] flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-[#6d5ef0] via-[#7c6ef2] to-[#8b5cf6] text-white ring-2 ring-white transition-transform duration-200 group-hover:scale-105">
                           {u.avatarUrl ? (
                             <img
                               src={u.avatarUrl}
@@ -176,16 +182,16 @@ export default function UsersPage() {
                               className="w-full h-full object-cover"
                             />
                           ) : (
-                            <span className="font-bold">
+                            <span className="font-bold text-sm">
                               {u.name ? u.name.slice(0, 2).toUpperCase() : "??"}
                             </span>
                           )}
                         </div>
                         <div>
-                          <div className="font-bold text-gray-900 group-hover:text-[#6d5ef0] transition-colors">
+                          <div className="font-bold text-slate-800 group-hover:text-[#6d5ef0] transition-colors">
                             {u.name}
                           </div>
-                          <div className="text-[11px] text-gray-400 font-medium">
+                          <div className="text-[11px] text-slate-400 font-medium mt-0.5">
                             Inscrit le {new Date(u.createdAt).toLocaleDateString("fr-FR")}
                           </div>
                         </div>
@@ -193,13 +199,13 @@ export default function UsersPage() {
                     </td>
 
                     {/* Coordonnées */}
-                    <td className="px-6 py-4 space-y-0.5">
-                      <div className="flex items-center gap-1.5 text-gray-600 text-xs font-medium">
-                        <Mail size={12} className="text-gray-400" />
+                    <td className="px-6 py-4 space-y-1">
+                      <div className="flex items-center gap-1.5 text-slate-600 text-xs font-medium">
+                        <Mail size={12} className="text-violet-400" />
                         <span>{u.email}</span>
                       </div>
-                      <div className="flex items-center gap-1.5 text-gray-500 text-xs">
-                        <Phone size={12} className="text-gray-400" />
+                      <div className="flex items-center gap-1.5 text-slate-500 text-xs">
+                        <Phone size={12} className="text-violet-400" />
                         <span>{u.phone || "—"}</span>
                       </div>
                     </td>
@@ -211,7 +217,7 @@ export default function UsersPage() {
                           value={u.role}
                           disabled={actionLoadingId === u._id}
                           onChange={(e) => handleRoleChange(u._id, e.target.value as User["role"])}
-                          className={`px-2 py-1 rounded-lg text-xs font-semibold border shadow-sm cursor-pointer outline-none bg-transparent transition-all ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border shadow-sm cursor-pointer outline-none bg-transparent transition-all duration-200 focus:ring-2 focus:ring-violet-200 ${
                             roleColors[u.role] || roleColors.Viewer
                           } hover:brightness-95 disabled:opacity-50`}
                         >
@@ -225,12 +231,12 @@ export default function UsersPage() {
                     {/* Statut */}
                     <td className="px-6 py-4">
                       {u.status === "Actif" ? (
-                        <div className="flex items-center gap-1.5 text-emerald-600 font-semibold text-xs">
+                        <div className="inline-flex items-center gap-1.5 text-emerald-700 font-semibold text-xs bg-emerald-50/70 border border-emerald-100 px-2 py-1 rounded-full">
                           <CheckCircle2 size={14} />
                           <span>Actif</span>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1.5 text-red-500 font-semibold text-xs">
+                        <div className="inline-flex items-center gap-1.5 text-rose-600 font-semibold text-xs bg-rose-50/70 border border-rose-100 px-2 py-1 rounded-full">
                           <XCircle size={14} />
                           <span>Inactif</span>
                         </div>
@@ -238,9 +244,9 @@ export default function UsersPage() {
                     </td>
 
                     {/* Dernière Connexion */}
-                    <td className="px-6 py-4 text-gray-500 text-xs font-medium">
+                    <td className="px-6 py-4 text-slate-500 text-xs font-medium">
                       <div className="flex items-center gap-1.5">
-                        <Calendar size={13} className="text-gray-400" />
+                        <Calendar size={13} className="text-violet-400" />
                         <span>
                           {u.lastLogin
                             ? new Date(u.lastLogin).toLocaleString("fr-FR", {
@@ -257,7 +263,7 @@ export default function UsersPage() {
                       <div className="flex items-center justify-end gap-2 opacity-70 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => router.push(`/users/${u._id}`)}
-                          className="p-2 text-gray-400 hover:text-[#6d5ef0] hover:bg-[#6d5ef0]/10 rounded-xl transition-all"
+                          className="p-2 text-slate-400 hover:text-[#6d5ef0] hover:bg-violet-50 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95"
                           title="Voir le dashboard de prospection"
                         >
                           <BarChart3 size={16} />
@@ -265,7 +271,7 @@ export default function UsersPage() {
                         <button
                           onClick={() => handleDeleteUser(u._id, u.name)}
                           disabled={actionLoadingId === u._id}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all disabled:opacity-50"
+                          className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
                           title="Supprimer définitivement"
                         >
                           <Trash2 size={16} />

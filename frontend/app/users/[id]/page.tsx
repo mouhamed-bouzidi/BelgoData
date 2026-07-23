@@ -85,15 +85,19 @@ interface LoginLog {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+// Nombre de lignes affichées en aperçu sur le dashboard pour chaque type de log,
+// avant de devoir passer par "Voir tout" (pagination complète sur une page dédiée).
+const PREVIEW_LOGS_LIMIT = 5;
+// Palette harmonisée autour du violet/mauve pour un rendu doux à l'œil.
 const COLORS = [
   "#6d5ef0",
-  "#3b82f6",
-  "#10b981",
-  "#f59e0b",
-  "#ec4899",
-  "#06b6d4",
   "#8b5cf6",
-  "#ef4444",
+  "#a78bfa",
+  "#c4b5fd",
+  "#7c3aed",
+  "#a855f7",
+  "#d8b4fe",
+  "#5b52d6",
 ];
 
 export default function UserDashboardPage() {
@@ -104,8 +108,11 @@ export default function UserDashboardPage() {
 
   const [stats, setStats] = useState<UserStats | null>(null);
   const [sessions, setSessions] = useState<ScrapingSessionLog[]>([]);
+  const [sessionsTotal, setSessionsTotal] = useState(0);
   const [loginHistory, setLoginHistory] = useState<LoginLog[]>([]);
+  const [loginHistoryTotal, setLoginHistoryTotal] = useState(0);
   const [deletionLogs, setDeletionLogs] = useState<DeletionLog[]>([]);
+  const [deletionLogsTotal, setDeletionLogsTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -120,14 +127,17 @@ export default function UserDashboardPage() {
     try {
       const [statsRes, sessionsRes, loginRes, deletionRes] = await Promise.all([
         axios.get(`${API_URL}/api/auth/users/${userId}/stats`, getAuthConfig()),
-        axios.get(`${API_URL}/api/auth/users/${userId}/sessions?limit=20`, getAuthConfig()),
-        axios.get(`${API_URL}/api/auth/users/${userId}/login-history?limit=20`, getAuthConfig()),
-        axios.get(`${API_URL}/api/auth/users/${userId}/deletion-logs?limit=20`, getAuthConfig()),
+        axios.get(`${API_URL}/api/auth/users/${userId}/sessions?limit=${PREVIEW_LOGS_LIMIT}`, getAuthConfig()),
+        axios.get(`${API_URL}/api/auth/users/${userId}/login-history?limit=${PREVIEW_LOGS_LIMIT}`, getAuthConfig()),
+        axios.get(`${API_URL}/api/auth/users/${userId}/deletion-logs?limit=${PREVIEW_LOGS_LIMIT}`, getAuthConfig()),
       ]);
       setStats(statsRes.data);
       setSessions(sessionsRes.data?.results || []);
+      setSessionsTotal(sessionsRes.data?.total || 0);
       setLoginHistory(loginRes.data?.results || []);
+      setLoginHistoryTotal(loginRes.data?.total || 0);
       setDeletionLogs(deletionRes.data?.results || []);
+      setDeletionLogsTotal(deletionRes.data?.total || 0);
     } catch (err) {
       console.error("Erreur chargement dashboard utilisateur :", err);
       setError("Impossible de charger le dashboard de cet utilisateur.");
@@ -144,23 +154,26 @@ export default function UserDashboardPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-3">
-        <div className="w-10 h-10 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-sm font-medium text-gray-400">Chargement du dashboard...</p>
+      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/40">
+        <div className="relative">
+          <div className="w-12 h-12 border-4 border-violet-100 rounded-full"></div>
+          <div className="w-12 h-12 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin absolute inset-0"></div>
+        </div>
+        <p className="text-sm font-medium text-slate-500">Chargement du dashboard...</p>
       </div>
     );
   }
 
   if (error || !stats) {
     return (
-      <div className="p-8">
+      <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen">
         <button
           onClick={() => router.push("/users")}
-          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-[#6d5ef0] mb-6"
+          className="flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[#6d5ef0] mb-6 transition-colors"
         >
           <ArrowLeft size={16} /> Retour aux utilisateurs
         </button>
-        <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm max-w-xl">
+        <div className="bg-red-50/80 backdrop-blur-sm border border-red-200/60 text-red-600 px-4 py-3 rounded-2xl text-sm max-w-xl shadow-sm">
           {error || "Utilisateur introuvable."}
         </div>
       </div>
@@ -173,25 +186,26 @@ export default function UserDashboardPage() {
   }));
 
   return (
-    <div className="p-8 bg-slate-50/30 min-h-screen space-y-8 animate-fade-in">
+    <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen space-y-8 animate-fade-in">
       {/* HEADER */}
-      <div>
+      <div className="relative">
+        <div className="absolute -top-6 -left-6 w-40 h-40 bg-violet-200/30 rounded-full blur-3xl pointer-events-none" aria-hidden />
         <button
           onClick={() => router.push("/users")}
-          className="flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-[#6d5ef0] mb-4"
+          className="relative flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[#6d5ef0] mb-4 transition-colors group"
         >
-          <ArrowLeft size={16} /> Retour aux utilisateurs
+          <ArrowLeft size={16} className="group-hover:-translate-x-0.5 transition-transform" /> Retour aux utilisateurs
         </button>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-[#6d5ef0] to-[#8b5cf6] text-white font-bold shadow-sm">
+        <div className="relative flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-[#6d5ef0] via-[#7c6ef2] to-[#8b5cf6] text-white font-bold text-lg shadow-[0_8px_24px_-6px_rgba(109,94,240,0.5)] ring-2 ring-white">
             {stats.user.name ? stats.user.name.slice(0, 2).toUpperCase() : "??"}
           </div>
           <div>
-            <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+            <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-slate-900 to-[#6d5ef0] bg-clip-text text-transparent">
               Dashboard de {stats.user.name}
             </h1>
-            <p className="text-sm font-medium text-gray-400">
-              {stats.user.email} · {stats.user.role}
+            <p className="text-sm font-medium text-slate-500 mt-0.5">
+              {stats.user.email} · <span className="text-violet-600 font-semibold">{stats.user.role}</span>
             </p>
           </div>
         </div>
@@ -215,12 +229,12 @@ export default function UserDashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* RÉPARTITION PAR SECTEUR */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-          <h2 className="font-bold text-gray-900 text-base tracking-tight">Répartition par secteur</h2>
-          <p className="text-xs text-gray-400 mt-0.5 mb-4">Prospects générés par cet utilisateur</p>
+        <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl p-6 shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
+          <h2 className="font-bold text-slate-800 text-base tracking-tight">Répartition par secteur</h2>
+          <p className="text-xs text-slate-400 mt-0.5 mb-4">Prospects générés par cet utilisateur</p>
 
           {categoryData.length === 0 ? (
-            <div className="text-sm text-gray-400 py-10 text-center">Aucun prospect pour l&apos;instant.</div>
+            <div className="text-sm text-slate-400 py-10 text-center">Aucun prospect pour l&apos;instant.</div>
           ) : (
             <div className="flex items-center gap-8">
               <ResponsiveContainer width={160} height={160}>
@@ -230,15 +244,15 @@ export default function UserDashboardPage() {
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "#111827", borderRadius: "12px", border: "none", color: "#fff", fontSize: "12px" }} />
+                  <Tooltip contentStyle={{ background: "rgba(30,27,75,0.95)", borderRadius: "12px", border: "none", color: "#fff", fontSize: "12px", boxShadow: "0 8px 24px -4px rgba(109,94,240,0.3)" }} />
                 </PieChart>
               </ResponsiveContainer>
               <ul className="space-y-2 text-sm">
                 {categoryData.slice(0, 6).map((c, i) => (
                   <li key={c.name} className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                    <span className="text-gray-700 font-medium">{c.name}</span>
-                    <span className="text-gray-400">({c.value})</span>
+                    <span className="w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="text-slate-700 font-medium">{c.name}</span>
+                    <span className="text-slate-400">({c.value})</span>
                   </li>
                 ))}
               </ul>
@@ -247,23 +261,23 @@ export default function UserDashboardPage() {
         </div>
 
         {/* DERNIERS PROSPECTS */}
-        <div className="bg-white border border-gray-100 rounded-2xl p-6 shadow-sm">
-          <h2 className="font-bold text-gray-900 text-base tracking-tight">Derniers prospects ajoutés</h2>
-          <p className="text-xs text-gray-400 mt-0.5 mb-4">5 prospects les plus récents</p>
+        <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl p-6 shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
+          <h2 className="font-bold text-slate-800 text-base tracking-tight">Derniers prospects ajoutés</h2>
+          <p className="text-xs text-slate-400 mt-0.5 mb-4">5 prospects les plus récents</p>
 
           {stats.recent.length === 0 ? (
-            <div className="text-sm text-gray-400 py-10 text-center">Aucun prospect pour l&apos;instant.</div>
+            <div className="text-sm text-slate-400 py-10 text-center">Aucun prospect pour l&apos;instant.</div>
           ) : (
-            <ul className="divide-y divide-gray-50">
+            <ul className="divide-y divide-slate-100/70">
               {stats.recent.map((p) => (
-                <li key={p._id} className="py-3 flex items-center justify-between">
+                <li key={p._id} className="py-3 flex items-center justify-between hover:bg-violet-50/30 -mx-2 px-2 rounded-lg transition-colors">
                   <div>
-                    <div className="font-semibold text-gray-800 text-sm">{p.name}</div>
-                    <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                      <MapPin size={11} /> {p.address?.city || "—"} {p.address?.postcode ? `(${p.address.postcode})` : ""}
+                    <div className="font-semibold text-slate-800 text-sm">{p.name}</div>
+                    <div className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                      <MapPin size={11} className="text-violet-400" /> {p.address?.city || "—"} {p.address?.postcode ? `(${p.address.postcode})` : ""}
                     </div>
                   </div>
-                  <span className="text-[11px] text-gray-400 font-medium">
+                  <span className="text-[11px] text-slate-400 font-medium">
                     {new Date(p.createdAt).toLocaleDateString("fr-BE")}
                   </span>
                 </li>
@@ -274,29 +288,31 @@ export default function UserDashboardPage() {
       </div>
 
       {/* LOGS DE SCRAPING */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-2 bg-gradient-to-r from-violet-50/40 via-transparent to-transparent">
           <div className="flex items-center gap-2">
-            <History size={16} className="text-gray-400" />
-            <h2 className="font-bold text-gray-900 text-base tracking-tight">Logs de recherche (sessions de scraping)</h2>
+            <History size={16} className="text-violet-500" />
+            <h2 className="font-bold text-slate-800 text-base tracking-tight">Logs de recherche (sessions de scraping)</h2>
           </div>
           <Link
             href={`/users/${userId}/logs/sessions`}
-            className="flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:underline flex-shrink-0"
+            className={`flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:text-[#5b52d6] hover:gap-1.5 transition-all flex-shrink-0 ${
+              sessionsTotal <= PREVIEW_LOGS_LIMIT ? "invisible" : ""
+            }`}
           >
             Voir tout <ArrowRight size={13} />
           </Link>
         </div>
 
         {sessions.length === 0 ? (
-          <div className="text-sm text-gray-400 py-10 text-center">
+          <div className="text-sm text-slate-400 py-10 text-center">
             Aucune session de scraping déclenchée par cet utilisateur.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-gray-400 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/20">
+                <tr className="text-slate-500 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/40">
                   <th className="px-6 py-3 font-bold">Date</th>
                   <th className="px-6 py-3 font-bold">Catégorie</th>
                   <th className="px-6 py-3 font-bold">Code postal</th>
@@ -305,17 +321,17 @@ export default function UserDashboardPage() {
                   <th className="px-6 py-3 font-bold text-right">Doublons ignorés</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100/70">
                 {sessions.map((s) => (
-                  <tr key={s._id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-6 py-3 text-gray-500 text-xs font-medium">
+                  <tr key={s._id} className="hover:bg-violet-50/30 transition-colors">
+                    <td className="px-6 py-3 text-slate-500 text-xs font-medium">
                       {new Date(s.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
                     </td>
-                    <td className="px-6 py-3 font-semibold text-gray-800">{s.category}</td>
-                    <td className="px-6 py-3 text-gray-600">{s.postalCode}</td>
-                    <td className="px-6 py-3 text-right text-gray-700">{s.totalFound}</td>
+                    <td className="px-6 py-3 font-semibold text-slate-800">{s.category}</td>
+                    <td className="px-6 py-3 text-slate-600">{s.postalCode}</td>
+                    <td className="px-6 py-3 text-right text-slate-700">{s.totalFound}</td>
                     <td className="px-6 py-3 text-right text-emerald-600 font-semibold">{s.inserted}</td>
-                    <td className="px-6 py-3 text-right text-gray-400">{s.skipped}</td>
+                    <td className="px-6 py-3 text-right text-slate-400">{s.skipped}</td>
                   </tr>
                 ))}
               </tbody>
@@ -325,44 +341,46 @@ export default function UserDashboardPage() {
       </div>
 
       {/* HISTORIQUE DE CONNEXION */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-2 bg-gradient-to-r from-violet-50/40 via-transparent to-transparent">
           <div className="flex items-center gap-2">
-            <LogIn size={16} className="text-gray-400" />
-            <h2 className="font-bold text-gray-900 text-base tracking-tight">Historique de connexion</h2>
+            <LogIn size={16} className="text-violet-500" />
+            <h2 className="font-bold text-slate-800 text-base tracking-tight">Historique de connexion</h2>
           </div>
           <Link
             href={`/users/${userId}/logs/login-history`}
-            className="flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:underline flex-shrink-0"
+            className={`flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:text-[#5b52d6] hover:gap-1.5 transition-all flex-shrink-0 ${
+              loginHistoryTotal <= PREVIEW_LOGS_LIMIT ? "invisible" : ""
+            }`}
           >
             Voir tout <ArrowRight size={13} />
           </Link>
         </div>
 
         {loginHistory.length === 0 ? (
-          <div className="text-sm text-gray-400 py-10 text-center">
+          <div className="text-sm text-slate-400 py-10 text-center">
             Aucune connexion enregistrée pour cet utilisateur.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-gray-400 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/20">
+                <tr className="text-slate-500 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/40">
                   <th className="px-6 py-3 font-bold">Date de connexion</th>
                   <th className="px-6 py-3 font-bold">Adresse IP</th>
                   <th className="px-6 py-3 font-bold">Appareil</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100/70">
                 {loginHistory.map((l) => (
-                  <tr key={l._id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-6 py-3 text-gray-700 font-medium">
+                  <tr key={l._id} className="hover:bg-violet-50/30 transition-colors">
+                    <td className="px-6 py-3 text-slate-700 font-medium">
                       {new Date(l.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
                     </td>
-                    <td className="px-6 py-3 text-gray-500 font-mono text-xs">{l.ip || "—"}</td>
-                    <td className="px-6 py-3 text-gray-600">
+                    <td className="px-6 py-3 text-slate-500 font-mono text-xs">{l.ip || "—"}</td>
+                    <td className="px-6 py-3 text-slate-600">
                       <span className="inline-flex items-center gap-1.5">
-                        <Monitor size={13} className="text-gray-400" />
+                        <Monitor size={13} className="text-violet-400" />
                         {parseUserAgent(l.userAgent)}
                       </span>
                     </td>
@@ -375,29 +393,31 @@ export default function UserDashboardPage() {
       </div>
 
       {/* LOGS DE SUPPRESSION */}
-      <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-2">
+      <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between gap-2 bg-gradient-to-r from-violet-50/40 via-transparent to-transparent">
           <div className="flex items-center gap-2">
-            <Trash2 size={16} className="text-gray-400" />
-            <h2 className="font-bold text-gray-900 text-base tracking-tight">Logs de suppression</h2>
+            <Trash2 size={16} className="text-violet-500" />
+            <h2 className="font-bold text-slate-800 text-base tracking-tight">Logs de suppression</h2>
           </div>
           <Link
             href={`/users/${userId}/logs/deletions`}
-            className="flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:underline flex-shrink-0"
+            className={`flex items-center gap-1 text-xs font-semibold text-[#6d5ef0] hover:text-[#5b52d6] hover:gap-1.5 transition-all flex-shrink-0 ${
+              deletionLogsTotal <= PREVIEW_LOGS_LIMIT ? "invisible" : ""
+            }`}
           >
             Voir tout <ArrowRight size={13} />
           </Link>
         </div>
 
         {deletionLogs.length === 0 ? (
-          <div className="text-sm text-gray-400 py-10 text-center">
+          <div className="text-sm text-slate-400 py-10 text-center">
             Aucune suppression enregistrée pour cet utilisateur.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <tr className="text-gray-400 border-b border-gray-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/20">
+                <tr className="text-slate-500 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider bg-slate-50/40">
                   <th className="px-6 py-3 font-bold">Date</th>
                   <th className="px-6 py-3 font-bold">Type</th>
                   <th className="px-6 py-3 font-bold">Détail</th>
@@ -405,30 +425,30 @@ export default function UserDashboardPage() {
                   <th className="px-6 py-3 font-bold">Appareil</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100/70">
                 {deletionLogs.map((d) => (
-                  <tr key={d._id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-6 py-3 text-gray-500 text-xs font-medium">
+                  <tr key={d._id} className="hover:bg-violet-50/30 transition-colors">
+                    <td className="px-6 py-3 text-slate-500 text-xs font-medium">
                       {new Date(d.createdAt).toLocaleString("fr-BE", { dateStyle: "short", timeStyle: "short" })}
                     </td>
                     <td className="px-6 py-3">
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
                           d.type === "bulk"
-                            ? "bg-red-50 text-red-700 border-red-200/60"
-                            : "bg-gray-50 text-gray-600 border-gray-200"
+                            ? "bg-rose-50 text-rose-700 border-rose-200/60"
+                            : "bg-slate-50 text-slate-600 border-slate-200"
                         }`}
                       >
                         {d.type === "bulk" ? "Suppression groupée" : "Unitaire"}
                       </span>
                     </td>
-                    <td className="px-6 py-3 text-gray-700">
+                    <td className="px-6 py-3 text-slate-700">
                       {d.type === "unit" ? (d.prospectName || "Prospect supprimé") : "Suppression par filtre"}
                     </td>
-                    <td className="px-6 py-3 text-right font-semibold text-red-600">{d.deletedCount}</td>
-                    <td className="px-6 py-3 text-gray-600">
+                    <td className="px-6 py-3 text-right font-semibold text-rose-600">{d.deletedCount}</td>
+                    <td className="px-6 py-3 text-slate-600">
                       <span className="inline-flex items-center gap-1.5">
-                        <Monitor size={13} className="text-gray-400" />
+                        <Monitor size={13} className="text-violet-400" />
                         {parseUserAgent(d.userAgent)}
                       </span>
                     </td>
