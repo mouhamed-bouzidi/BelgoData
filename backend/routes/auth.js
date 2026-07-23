@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
 const User = require("../models/users");
+const LoginHistory = require("../models/LoginHistory");
 const authMiddleware = require("../middleware/auth");
 const authorizeRoles = require("../middleware/roleMiddleware");
 
@@ -73,6 +74,13 @@ router.post("/login", async (req, res) => {
 
     user.lastLogin = new Date();
     await user.save();
+
+    // Trace la connexion pour l'historique consultable dans le dashboard admin
+    LoginHistory.create({
+      userId: user._id,
+      ip: req.ip || req.headers["x-forwarded-for"] || null,
+      userAgent: req.headers["user-agent"] || null,
+    }).catch((err) => console.error("⚠️ Échec enregistrement historique de connexion:", err.message));
 
     const token = generateToken(user);
     res.json({

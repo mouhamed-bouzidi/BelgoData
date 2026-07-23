@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import axios from "axios";
-import { CheckCircle2, XCircle, Calendar, Mail, Phone, Trash2 } from "lucide-react";
+import { CheckCircle2, XCircle, Calendar, Mail, Phone, Trash2, BarChart3 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface User {
@@ -22,6 +23,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export default function UsersPage() {
   const { token, loading: authLoading, user: currentUser } = useAuth();
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -253,6 +255,13 @@ export default function UsersPage() {
                     {/* Boutons d'actions */}
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2 opacity-70 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => router.push(`/users/${u._id}`)}
+                          className="p-2 text-gray-400 hover:text-[#6d5ef0] hover:bg-[#6d5ef0]/10 rounded-xl transition-all"
+                          title="Voir le dashboard de prospection"
+                        >
+                          <BarChart3 size={16} />
+                        </button>
                         <button
                           onClick={() => handleDeleteUser(u._id, u.name)}
                           disabled={actionLoadingId === u._id}
