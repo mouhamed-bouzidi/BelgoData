@@ -13,7 +13,10 @@ import {
   Film,
   HelpCircle,
   ShieldCheck,
-  Hammer
+  Hammer,
+  ShoppingBag,
+  Hotel,
+  Car
 } from "lucide-react";
 
 interface BadgeProps {
@@ -63,7 +66,16 @@ export function getCategoryIcon(category?: string, size = 16, className = "") {
       
     case "Culture & Loisirs":
       return <Film size={size} className={className} />;
-      
+
+    case "Commerce & Retail":
+      return <ShoppingBag size={size} className={className} />;
+
+    case "Hôtellerie & Tourisme":
+      return <Hotel size={size} className={className} />;
+
+    case "Transport & Logistique":
+      return <Car size={size} className={className} />;
+
     default:
       return <HelpCircle size={size} className={className} />;
   }
@@ -114,6 +126,15 @@ export function CategoryBadge({ category }: BadgeProps) {
       break;
     case "Culture & Loisirs":
       colors = "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200/60";
+      break;
+    case "Commerce & Retail":
+      colors = "bg-sky-50 text-sky-700 border-sky-200/60";
+      break;
+    case "Hôtellerie & Tourisme":
+      colors = "bg-yellow-50 text-yellow-700 border-yellow-200/60";
+      break;
+    case "Transport & Logistique":
+      colors = "bg-lime-50 text-lime-700 border-lime-200/60";
       break;
   }
 
@@ -170,6 +191,15 @@ export function CategoryIconCircle({ category }: BadgeProps) {
       break;
     case "Culture & Loisirs":
       circleBg = "bg-fuchsia-100 text-fuchsia-600";
+      break;
+    case "Commerce & Retail":
+      circleBg = "bg-sky-100 text-sky-600";
+      break;
+    case "Hôtellerie & Tourisme":
+      circleBg = "bg-yellow-100 text-yellow-600";
+      break;
+    case "Transport & Logistique":
+      circleBg = "bg-lime-100 text-lime-600";
       break;
   }
 

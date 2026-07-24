@@ -1,33 +1,12 @@
-"use client";
-
-import { usePathname } from "next/navigation";
+import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/layout/Sidebar";
+import AppShell from "@/components/layout/AppShell";
 import { AuthProvider } from "@/context/AuthContext";
 
-const publicRoutes = ["/login", "/signup"];
-
-function AppLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const isPublic = publicRoutes.includes(pathname);
-
-  if (isPublic) {
-    return <>{children}</>;
-  }
-
-  return (
-    <div className="flex">
-      <Sidebar />
-      <main className="flex-1 ml-[240px] min-h-screen bg-content-bg">
-        {children}
-      </main>
-    </div>
-  );
-}
-
-
-
-
+export const metadata: Metadata = {
+  title: "BelgoData",
+  description: "Plateforme de prospection B2B — BelgoData",
+};
 
 export default function RootLayout({
   children,
@@ -38,7 +17,7 @@ export default function RootLayout({
     <html lang="fr">
       <body>
         <AuthProvider>
-          <AppLayout>{children}</AppLayout>
+          <AppShell>{children}</AppShell>
         </AuthProvider>
       </body>
     </html>

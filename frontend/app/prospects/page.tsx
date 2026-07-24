@@ -373,6 +373,7 @@ export default function ProspectsPage() {
               <option>Alimentation & Boulangerie</option>
               <option>Industrie & Production</option>
               <option>Artisanat & Construction</option>
+              <option>Commerce & Retail</option>
               <option>Services aux Entreprises</option>
               <option>Finance & Juridique</option>
               <option>Immobilier</option>
@@ -382,6 +383,8 @@ export default function ProspectsPage() {
               <option>Éducation & Recherche</option>
               <option>Santé</option>
               <option>Culture & Loisirs</option>
+              <option>Hôtellerie & Tourisme</option>
+              <option>Transport & Logistique</option>
               <option>Autre</option>
             </select>
           </div>
@@ -674,6 +677,7 @@ export default function ProspectsPage() {
                   <option>Alimentation & Boulangerie</option>
                   <option>Industrie & Production</option>
                   <option>Artisanat & Construction</option>
+                  <option>Commerce & Retail</option>
                   <option>Services aux Entreprises</option>
                   <option>Finance & Juridique</option>
                   <option>Immobilier</option>
@@ -683,6 +687,8 @@ export default function ProspectsPage() {
                   <option>Éducation & Recherche</option>
                   <option>Santé</option>
                   <option>Culture & Loisirs</option>
+                  <option>Hôtellerie & Tourisme</option>
+                  <option>Transport & Logistique</option>
                   <option>Autre</option>
                 </select>
               </div>

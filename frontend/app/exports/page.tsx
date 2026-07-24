@@ -151,6 +151,9 @@ export default function ExportsPage() {
                 <option>Tous les secteurs</option>
                 <option>Restauration & Café</option>
                 <option>Alimentation & Boulangerie</option>
+                <option>Industrie & Production</option>
+                <option>Artisanat & Construction</option>
+                <option>Commerce & Retail</option>
                 <option>Administration & Secteur Public</option>
                 <option>Services aux Entreprises</option>
                 <option>Finance & Juridique</option>
@@ -159,6 +162,9 @@ export default function ExportsPage() {
                 <option>Asbl & ONG</option>
                 <option>Éducation & Recherche</option>
                 <option>Santé</option>
+                <option>Culture & Loisirs</option>
+                <option>Hôtellerie & Tourisme</option>
+                <option>Transport & Logistique</option>
                 <option>Autre</option>
               </select>
             </div>

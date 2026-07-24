@@ -317,14 +317,23 @@ OSM_TAG_TO_GROUP = {
     "convenience": "Alimentation & Boulangerie",
     "butcher": "Alimentation & Boulangerie",
     "seafood": "Alimentation & Boulangerie",
+    "deli": "Alimentation & Boulangerie",
+    "confectionery": "Alimentation & Boulangerie",
+    "chocolate": "Alimentation & Boulangerie",
 
-    # Industrie, Artisanat & Production
+    # Industrie & Production
     "factory": "Industrie & Production",
     "works": "Industrie & Production",
     "warehouse": "Industrie & Production",
     "workshop": "Industrie & Production",
     "printing": "Industrie & Production",
     "brewery": "Industrie & Production",
+    "distillery": "Industrie & Production",
+    "food_processing": "Industrie & Production",
+    "metal": "Industrie & Production",
+    "chemical": "Industrie & Production",
+
+    # Artisanat & Construction
     "carpenter": "Artisanat & Construction",
     "metal_construction": "Artisanat & Construction",
     "electrician": "Artisanat & Construction",
@@ -332,18 +341,47 @@ OSM_TAG_TO_GROUP = {
     "builder": "Artisanat & Construction",
     "construction_company": "Artisanat & Construction",
     "construction": "Artisanat & Construction",
+    "mason": "Artisanat & Construction",
+    "tiler": "Artisanat & Construction",
+    "roofer": "Artisanat & Construction",
+    "painter": "Artisanat & Construction",
+    "glaziery": "Artisanat & Construction",
 
-    # Administration & Public
-    "townhall": "Administration & Secteur Public",
-    "post_office": "Administration & Secteur Public",
-    "police": "Administration & Secteur Public",
-    "diplomatic": "Administration & Secteur Public",
-    "government": "Administration & Secteur Public",
+    # Commerce & Retail (coiffeurs, mode, équipement, etc. — auparavant non mappés → "Autre")
+    "hairdresser": "Commerce & Retail",
+    "beauty": "Commerce & Retail",
+    "clothes": "Commerce & Retail",
+    "shoes": "Commerce & Retail",
+    "jewelry": "Commerce & Retail",
+    "appliance": "Commerce & Retail",
+    "computer": "Commerce & Retail",
+    "mobile_phone": "Commerce & Retail",
+    "books": "Commerce & Retail",
+    "stationery": "Commerce & Retail",
+    "sports": "Commerce & Retail",
+    "toys": "Commerce & Retail",
+    "furniture": "Commerce & Retail",
+    "interior_decoration": "Commerce & Retail",
+    "florist": "Commerce & Retail",
+    "garden_centre": "Commerce & Retail",
+    "doityourself": "Commerce & Retail",
+    "medical_supply": "Commerce & Retail",
+    "pet": "Commerce & Retail",
+    "photo": "Commerce & Retail",
+    "music": "Commerce & Retail",
+    "antiques": "Commerce & Retail",
+    "second_hand": "Commerce & Retail",
 
     # Corporate / Services Professionnels
-    "company": "Services aux Entreprises",
-    "logistics": "Services aux Entreprises",
+    "logistics": "Transport & Logistique",
     "cleaning": "Services aux Entreprises",
+    "security": "Services aux Entreprises",
+    "consulting": "Services aux Entreprises",
+    "advertising_agency": "Services aux Entreprises",
+    "employment_agency": "Services aux Entreprises",
+    "architect": "Services aux Entreprises",
+    "surveyor": "Services aux Entreprises",
+    "engineer": "Services aux Entreprises",
 
     # Juridique & Finance
     "lawyer": "Finance & Juridique",
@@ -352,6 +390,7 @@ OSM_TAG_TO_GROUP = {
     "tax_advisor": "Finance & Juridique",
     "accountant": "Finance & Juridique",
     "bank": "Finance & Juridique",
+    "financial": "Finance & Juridique",
 
     # Immobilier
     "estate_agent": "Immobilier",
@@ -361,22 +400,67 @@ OSM_TAG_TO_GROUP = {
     "it": "Tech & Télécom",
     "telecommunication": "Tech & Télécom",
 
-    # Non-Profit & Culture
+    # Administration & Public
+    "townhall": "Administration & Secteur Public",
+    "post_office": "Administration & Secteur Public",
+    "police": "Administration & Secteur Public",
+    "embassy": "Administration & Secteur Public",
+    "fire_station": "Administration & Secteur Public",
+    "courthouse": "Administration & Secteur Public",
+
+    # Non-Profit
     "association": "Asbl & ONG",
     "ngo": "Asbl & ONG",
     "foundation": "Asbl & ONG",
     "place_of_worship": "Asbl & ONG",
-    "museum": "Culture & Loisirs",
-    "theatre": "Culture & Loisirs",
 
     # Éducation & Recherche
     "school": "Éducation & Recherche",
     "university": "Éducation & Recherche",
+    "college": "Éducation & Recherche",
+    "nursery": "Éducation & Recherche",
+    "training": "Éducation & Recherche",
+    "driving_school": "Éducation & Recherche",
+    "music_school": "Éducation & Recherche",
+    "sports_centre": "Éducation & Recherche",
 
     # Santé
     "doctors": "Santé",
     "dentist": "Santé",
     "pharmacy": "Santé",
+    "hospital": "Santé",
+    "clinic": "Santé",
+    "veterinary": "Santé",
+    "optician": "Santé",
+    "physiotherapist": "Santé",
+    "psychotherapist": "Santé",
+    "nurse": "Santé",
+
+    # Culture & Loisirs
+    "museum": "Culture & Loisirs",
+    "theatre": "Culture & Loisirs",
+    "cinema": "Culture & Loisirs",
+    "gallery": "Culture & Loisirs",
+    "fitness_centre": "Culture & Loisirs",
+    "swimming_pool": "Culture & Loisirs",
+    "bowling_alley": "Culture & Loisirs",
+    "escape_game": "Culture & Loisirs",
+
+    # Hôtellerie & Tourisme
+    "hotel": "Hôtellerie & Tourisme",
+    "hostel": "Hôtellerie & Tourisme",
+    "camp_site": "Hôtellerie & Tourisme",
+    "guest_house": "Hôtellerie & Tourisme",
+    "travel_agency": "Hôtellerie & Tourisme",
+
+    # Transport & Logistique
+    "taxi": "Transport & Logistique",
+    "car_rental": "Transport & Logistique",
+    "car_repair": "Transport & Logistique",
+    "car": "Transport & Logistique",
+    "fuel": "Transport & Logistique",
+    "parking": "Transport & Logistique",
+    "moving_company": "Transport & Logistique",
 }
 
 
