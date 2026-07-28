@@ -7,7 +7,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import NotificationBell from "@/components/layout/NotificationBell";
 
-
 import {
   MessageSquare,
   LayoutDashboard,
@@ -16,8 +15,6 @@ import {
   Upload,
   Users,
   Settings,
-  Search,
-  Globe,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -38,8 +35,6 @@ const navItems: NavItem[] = [
   { label: "Utilisateurs", href: "/users", icon: Users, roles: ["Administrateur"] }, 
   { label: "Paramètres", href: "/parametres", icon: Settings, roles: ["Administrateur"] },  
 ];
-
-
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -65,7 +60,7 @@ export default function Sidebar() {
 
   return (
     <aside className="w-[240px] h-screen bg-sidebar-bg text-white flex flex-col fixed left-0 top-0">
-      {/* Logo corrigé (taille carrée standard et comportement d'aspect respecté) */}
+      {/* En-tête / Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
         <div className="w-18 h-16 relative overflow-hidden flex-shrink-0">
           <Image
@@ -86,7 +81,7 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation principale avec Scrollbar épurée et moderne */}
+      {/* Navigation principale */}
       <nav className="flex-1 px-3 py-4 overflow-y-auto [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
         <ul className="space-y-1">
           {navItems
@@ -101,65 +96,68 @@ export default function Sidebar() {
                 <li key={item.href}>
                   <Link
                     href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
                       isActive
-                        ? "bg-accent text-white"
+                        ? "bg-accent text-white shadow-lg shadow-accent/30 font-medium"
                         : "text-white/70 hover:bg-sidebar-hover hover:text-white"
                     }`}
                   >
-                    <Icon size={18} strokeWidth={2} />
+                    {/* Icône animée (Option 1 : agrandissement et léger saut vers le haut) */}
+                    <Icon 
+                      size={18} 
+                      strokeWidth={2} 
+                      className={`transition-transform duration-300 ease-out ${
+                        isActive 
+                          ? "scale-110 -translate-y-0.5 text-white" 
+                          : "group-hover:scale-110 group-hover:text-white"
+                      }`}
+                    />
                     <span>{item.label}</span>
                   </Link>
                 </li>
               );
-          })}
+            })}
         </ul>
-
-        
       </nav>
 
       {/* Zone Basse : Profil et Déconnexion */}
-<div className="p-3 border-t border-white/5 space-y-2">
-  
-  {/* Le bloc profil devient un lien cliquable vers /profil */}
-  <Link 
-    href="/profil"
-    className="flex items-center gap-3 px-3 py-3 bg-sidebar-hover rounded-lg hover:bg-white/10 transition-colors group cursor-pointer"
-  >
-    {/* Avatar dynamique : affiche l'image s'il y en a une, sinon les initiales */}
-    <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-sm font-semibold flex-shrink-0 overflow-hidden shadow-inner relative">
-      {mounted && avatarUrl ? (
-        <Image
-          src={avatarUrl}
-          alt="Avatar"
-          fill
-          sizes="36px"
-          className="object-cover"
-        />
-      ) : (
-        <span>{mounted && user?.name ? user.name.slice(0, 2).toUpperCase() : "?"}</span>
-      )}
-    </div>
+      <div className="p-3 border-t border-white/5 space-y-2">
+        <Link 
+          href="/profil"
+          className="flex items-center gap-3 px-3 py-3 bg-sidebar-hover rounded-lg hover:bg-white/10 transition-colors group cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-sm font-semibold flex-shrink-0 overflow-hidden shadow-inner relative">
+            {mounted && avatarUrl ? (
+              <Image
+                src={avatarUrl}
+                alt="Avatar"
+                fill
+                sizes="36px"
+                className="object-cover"
+              />
+            ) : (
+              <span>{mounted && user?.name ? user.name.slice(0, 2).toUpperCase() : "?"}</span>
+            )}
+          </div>
 
-    <div className="flex-1 min-w-0">
-      <div className="text-sm font-medium truncate group-hover:text-[#8b5cf6] transition-colors">
-        {mounted && user?.name ? user.name : "Utilisateur"}
-      </div>
-      <div className="text-xs text-white/50 truncate">
-        {mounted && user?.role ? user.role : ""}
-      </div>
-    </div>
-  </Link>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium truncate group-hover:text-[#8b5cf6] transition-colors">
+              {mounted && user?.name ? user.name : "Utilisateur"}
+            </div>
+            <div className="text-xs text-white/50 truncate">
+              {mounted && user?.role ? user.role : ""}
+            </div>
+          </div>
+        </Link>
 
-  {/* Bouton de Déconnexion existant */}
-  <button
-    onClick={handleLogout}
-    className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-white/70 hover:bg-sidebar-hover hover:text-white rounded-lg transition-colors"
-  >
-    <LogOut size={18} strokeWidth={2} />
-    <span>Déconnexion</span>
-  </button>
-</div>
-</aside>
-);
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-white/70 hover:bg-sidebar-hover hover:text-white rounded-lg transition-colors"
+        >
+          <LogOut size={18} strokeWidth={2} />
+          <span>Déconnexion</span>
+        </button>
+      </div>
+    </aside>
+  );
 }
