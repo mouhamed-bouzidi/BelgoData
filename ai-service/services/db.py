@@ -33,10 +33,42 @@ def get_db():
     return _db
 
 
+def create_new_prospects_notification(db, user_id: Optional[str], category: str, postal_code: str, new_prospects: list[dict]) -> None:
+    """
+    Crée une notification "new_prospects" directement dans la collection Mongo
+    utilisée par le backend Node (mêmes champs que le modèle Mongoose Notification).
+    Source unique de notification, quel que soit le chemin de scraping
+    (chat manuel via /agent/chat, appel direct /scrape/osm, ou watched search).
+    """
+    if not user_id or not new_prospects:
+        return
+    try:
+        sample = [p.get("name") for p in new_prospects[:5] if p.get("name")]
+        now = datetime.now(timezone.utc)
+        db["notifications"].insert_one({
+            "userId": ObjectId(user_id),
+            "type": "new_prospects",
+            "message": f"{len(new_prospects)} nouveau(x) prospect(s) ajouté(s) pour \"{category}\"",
+            "meta": {
+                "category": category,
+                "postalCode": postal_code,
+                "count": len(new_prospects),
+                "sample": sample,
+            },
+            "read": False,
+            "createdAt": now,
+            "updatedAt": now,
+        })
+    except Exception as e:
+        # Une notification ratée ne doit jamais faire échouer le scraping.
+        print(f"⚠️ Échec de création de la notification: {e}")
+
+
 def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_name: Optional[str] = None) -> dict:
     """
     Insère les prospects, en évitant les doublons via osm_id.
     Ajoute le champ createdBy quand un utilisateur est fourni.
+    Crée une notification "new_prospects" si des prospects ont réellement été ajoutés.
     Retourne un résumé: {inserted, skipped}.
     """
     if not prospects:
@@ -72,6 +104,11 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
         })
 
         
+    category = prospects[0].get("category") if prospects else "inconnu"
+    postal_code = prospects[0].get("address", {}).get("postcode") if prospects else "inconnu"
+
+    create_new_prospects_notification(db, user_id, category, postal_code, new_prospects)
+
     # Sauvegarde la session en base
     db["scrapingsessions"].insert_one({
         "sessionId": session_id,

@@ -152,104 +152,125 @@ router.post("/bulk-delete", authMiddleware, authorizeRoles("Administrateur", "Co
 
 // GET /api/prospects/stats - statistiques agrégées pour le Dashboard
 router.get("/stats", async (req, res) => {
-  try {
-    const currentEnd = new Date();
-    currentEnd.setHours(23, 59, 59, 999);
-    const currentStart = new Date(currentEnd);
-    currentStart.setDate(currentEnd.getDate() - 29);
-    currentStart.setHours(0, 0, 0, 0);
+try {
+  // n'afficher que les prospects actifs (exclure les soft‑deleted si présents)
+  const activeFilter = { deleted: { $ne: true } };
 
-    const previousEnd = new Date(currentStart);
-    previousEnd.setDate(previousEnd.getDate() - 1);
-    previousEnd.setHours(23, 59, 59, 999);
-    const previousStart = new Date(currentStart);
-    previousStart.setDate(previousStart.getDate() - 29);
-    previousStart.setHours(0, 0, 0, 0);
+  const currentEnd = new Date();
+  currentEnd.setHours(23, 59, 59, 999);
+  const currentStart = new Date(currentEnd);
+  currentStart.setDate(currentEnd.getDate() - 29);
+  currentStart.setHours(0, 0, 0, 0);
 
-    const periodMatch = (start, end) => ({ createdAt: { $gte: start, $lte: end } });
+  const previousEnd = new Date(currentStart);
+  previousEnd.setDate(previousEnd.getDate() - 1);
+  previousEnd.setHours(23, 59, 59, 999);
+  const previousStart = new Date(currentStart);
+  previousStart.setDate(previousStart.getDate() - 29);
+  previousStart.setHours(0, 0, 0, 0);
 
-    const [total, emailsCount, websitesCount, avgScoreResult, hotLeadsCount, currentPeriodStats, previousPeriodStats, byCategory, bySource, byPostcode, recent] = await Promise.all([
-      Prospect.countDocuments(),
-      Prospect.countDocuments({ email: { $regex: /\S/ } }),
-      Prospect.countDocuments({ website: { $regex: /\S/ } }),
+  const periodMatch = (start, end) => ({
+    ...activeFilter,
+    createdAt: { $gte: start, $lte: end },
+  });
+
+  const [
+    total,
+    emailsCount,
+    websitesCount,
+    avgScoreResult,
+    hotLeadsCount,
+    currentPeriodStats,
+    previousPeriodStats,
+    byCategory,
+    bySource,
+    byPostcode,
+    recent,
+  ] = await Promise.all([
+    Prospect.countDocuments(activeFilter),
+    Prospect.countDocuments({ ...activeFilter, email: { $regex: /\S/ } }),
+    Prospect.countDocuments({ ...activeFilter, website: { $regex: /\S/ } }),
+    Prospect.aggregate([
+      { $match: { ...activeFilter, score: { $ne: null } } },
+      { $group: { _id: null, avgScore: { $avg: "$score" } } },
+    ]),
+    Prospect.countDocuments({ ...activeFilter, score: { $gte: 80 } }),
+    Promise.all([
+      Prospect.countDocuments(periodMatch(currentStart, currentEnd)),
+      Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), email: { $regex: /\S/ } }),
+      Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), website: { $regex: /\S/ } }),
       Prospect.aggregate([
-        { $match: { score: { $ne: null } } },
+        { $match: { ...periodMatch(currentStart, currentEnd), score: { $ne: null } } },
         { $group: { _id: null, avgScore: { $avg: "$score" } } },
       ]),
-      Prospect.countDocuments({ score: { $gte: 80 } }),
-      Promise.all([
-        Prospect.countDocuments(periodMatch(currentStart, currentEnd)),
-        Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), email: { $regex: /\S/ } }),
-        Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), website: { $regex: /\S/ } }),
-        Prospect.aggregate([
-          { $match: { ...periodMatch(currentStart, currentEnd), score: { $ne: null } } },
-          { $group: { _id: null, avgScore: { $avg: "$score" } } },
-        ]),
-        Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), score: { $gte: 80 } }),
-      ]),
-      Promise.all([
-        Prospect.countDocuments(periodMatch(previousStart, previousEnd)),
-        Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), email: { $regex: /\S/ } }),
-        Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), website: { $regex: /\S/ } }),
-        Prospect.aggregate([
-          { $match: { ...periodMatch(previousStart, previousEnd), score: { $ne: null } } },
-          { $group: { _id: null, avgScore: { $avg: "$score" } } },
-        ]),
-        Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), score: { $gte: 80 } }),
-      ]),
+      Prospect.countDocuments({ ...periodMatch(currentStart, currentEnd), score: { $gte: 80 } }),
+    ]),
+    Promise.all([
+      Prospect.countDocuments(periodMatch(previousStart, previousEnd)),
+      Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), email: { $regex: /\S/ } }),
+      Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), website: { $regex: /\S/ } }),
       Prospect.aggregate([
-        { $group: { _id: "$category", count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
+        { $match: { ...periodMatch(previousStart, previousEnd), score: { $ne: null } } },
+        { $group: { _id: null, avgScore: { $avg: "$score" } } },
       ]),
-      Prospect.aggregate([
-        { $group: { _id: "$source", count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-      ]),
-      Prospect.aggregate([
-        { $group: { _id: "$address.postcode", count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-        { $limit: 10 },
-      ]),
-      Prospect.find().sort({ createdAt: -1 }).limit(5),
-    ]);
+      Prospect.countDocuments({ ...periodMatch(previousStart, previousEnd), score: { $gte: 80 } }),
+    ]),
+    Prospect.aggregate([
+      { $match: activeFilter },
+      { $group: { _id: "$category", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
+    Prospect.aggregate([
+      { $match: activeFilter },
+      { $group: { _id: "$source", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]),
+    Prospect.aggregate([
+      { $match: activeFilter },
+      { $group: { _id: "$address.postcode", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]),
+    Prospect.find(activeFilter).sort({ createdAt: -1 }).limit(5),
+  ]);
 
-    const avgScore = Math.round(avgScoreResult[0]?.avgScore ?? 0);
-    const currentValues = [
-      currentPeriodStats[0],
-      currentPeriodStats[1],
-      currentPeriodStats[2],
-      Math.round(currentPeriodStats[3][0]?.avgScore ?? 0),
-      currentPeriodStats[4],
-    ];
-    const previousValues = [
-      previousPeriodStats[0],
-      previousPeriodStats[1],
-      previousPeriodStats[2],
-      Math.round(previousPeriodStats[3][0]?.avgScore ?? 0),
-      previousPeriodStats[4],
-    ];
+  const avgScore = Math.round(avgScoreResult[0]?.avgScore ?? 0);
+  const currentValues = [
+    currentPeriodStats[0],
+    currentPeriodStats[1],
+    currentPeriodStats[2],
+    Math.round(currentPeriodStats[3][0]?.avgScore ?? 0),
+    currentPeriodStats[4],
+  ];
+  const previousValues = [
+    previousPeriodStats[0],
+    previousPeriodStats[1],
+    previousPeriodStats[2],
+    Math.round(previousPeriodStats[3][0]?.avgScore ?? 0),
+    previousPeriodStats[4],
+  ];
 
-    res.json({
-      total,
-      emailsCount,
-      websitesCount,
-      avgScore,
-      hotLeads: hotLeadsCount,
-      trends: {
-        total: calculateGrowthRate(currentValues[0], previousValues[0]),
-        emails: calculateGrowthRate(currentValues[1], previousValues[1]),
-        websites: calculateGrowthRate(currentValues[2], previousValues[2]),
-        avgScore: calculateGrowthRate(currentValues[3], previousValues[3]),
-        hotLeads: calculateGrowthRate(currentValues[4], previousValues[4]),
-      },
-      byCategory,
-      bySource,
-      byPostcode,
-      recent,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  res.json({
+    total,
+    emailsCount,
+    websitesCount,
+    avgScore,
+    hotLeads: hotLeadsCount,
+    trends: {
+      total: calculateGrowthRate(currentValues[0], previousValues[0]),
+      emails: calculateGrowthRate(currentValues[1], previousValues[1]),
+      websites: calculateGrowthRate(currentValues[2], previousValues[2]),
+      avgScore: calculateGrowthRate(currentValues[3], previousValues[3]),
+      hotLeads: calculateGrowthRate(currentValues[4], previousValues[4]),
+    },
+    byCategory,
+    bySource,
+    byPostcode,
+    recent,
+  });
+} catch (error) {
+  res.status(500).json({ error: error.message });
+}
 });
 
 const { Parser } = require("json2csv");

@@ -1,39 +1,25 @@
 const cron = require("node-cron");
 const axios = require("axios");
 const WatchedSearch = require("../models/WatchedSearch");
-const Notification = require("../models/Notification");
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:5001";
 
 /**
  * Exécute une alerte : relance un scraping OSM via l'ai-service pour la
- * catégorie/code postal surveillés, puis crée une notification in-app si
- * de nouveaux prospects ont été trouvés depuis la dernière exécution.
+ * catégorie/code postal surveillés. La notification in-app pour les
+ * nouveaux prospects est créée directement par l'ai-service (dans
+ * insert_prospects), qui est l'unique point d'insertion en base — ce qui
+ * garantit une notification à chaque fois que des prospects sont réellement
+ * ajoutés, que ce soit via une alerte programmée ou une recherche manuelle
+ * dans le chat.
  */
 async function runWatchedSearch(watch) {
   try {
-    const { data } = await axios.post(`${AI_SERVICE_URL}/scrape/osm`, {
+    await axios.post(`${AI_SERVICE_URL}/scrape/osm`, {
       postal_code: watch.postalCode,
       category: watch.category,
       userId: String(watch.userId),
     }, { timeout: 60000 });
-
-    const newProspects = data.new_prospects || [];
-
-    if (newProspects.length > 0) {
-      const sample = newProspects.slice(0, 5).map((p) => p.name).filter(Boolean);
-      await Notification.create({
-        userId: watch.userId,
-        type: "new_prospects",
-        message: `${newProspects.length} nouveau(x) prospect(s) détecté(s) pour "${watch.label || watch.category}"`,
-        meta: {
-          category: watch.category,
-          postalCode: watch.postalCode,
-          count: newProspects.length,
-          sample,
-        },
-      });
-    }
 
     watch.lastRunAt = new Date();
     await watch.save();

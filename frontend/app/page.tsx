@@ -29,6 +29,10 @@ import {
   Flame,
   Snowflake,
   CloudSun,
+  Wrench,
+  List,
+  CloudDownload,
+  GitCompareArrows,
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────────────────────
@@ -167,6 +171,62 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   Outils de repérage (barre de saisie)
+   ───────────────────────────────────────────────────────────── */
+interface ToolOption {
+  id: string;
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  starter: string; // phrase naturelle insérée dans le composeur, sans "/"
+}
+
+const toolOptions: ToolOption[] = [
+  {
+    id: "list",
+    label: "Lister",
+    description: "Lister les prospects selon vos critères.",
+    icon: <List size={20} className="text-indigo-600" />,
+    starter: "Liste les prospects ",
+  },
+  {
+    id: "scrape",
+    label: "Scraper",
+    description: "Lancer un scraping pour trouver de nouveaux prospects.",
+    icon: <CloudDownload size={20} className="text-indigo-600" />,
+    starter: "Cherche des ",
+  },
+  {
+    id: "delete",
+    label: "Supprimer",
+    description: "Supprimer des prospects selon vos critères.",
+    icon: <Trash2 size={20} className="text-indigo-600" />,
+    starter: "Supprime les prospects ",
+  },
+  {
+    id: "email",
+    label: "Envoyer mail",
+    description: "Envoyer un email aux prospects sélectionnés.",
+    icon: <Mail size={20} className="text-indigo-600" />,
+    starter: "Envoie un email à ",
+  },
+  {
+    id: "compare",
+    label: "Comparer",
+    description: "Comparer des listes ou des segments.",
+    icon: <GitCompareArrows size={20} className="text-indigo-600" />,
+    starter: "Compare ",
+  },
+  {
+    id: "report",
+    label: "Rapport / Bilan",
+    description: "Générer un bilan complet pour un prospect.",
+    icon: <FileText size={20} className="text-indigo-600" />,
+    starter: "Génère un bilan pour ",
+  },
+];
+
+/* ─────────────────────────────────────────────────────────────
    Page
    ───────────────────────────────────────────────────────────── */
 export default function AgentPage() {
@@ -183,6 +243,7 @@ export default function AgentPage() {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [activeTool, setActiveTool] = useState<ToolOption | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [activeReport, setActiveReport] = useState<Report | null>(null);
@@ -191,6 +252,7 @@ export default function AgentPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTools, setShowTools] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -453,19 +515,43 @@ export default function AgentPage() {
     }
   }
 
+  // Construit le message final = badge outil (si présent) + texte libre, puis envoie
+  function submitComposer() {
+    const fullText = activeTool ? `${activeTool.starter}${input}` : input;
+    if (!fullText.trim()) return;
+    sendMessage(fullText);
+    setActiveTool(null);
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    sendMessage(input);
+    submitComposer();
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey || true)) {
-      // Enter simple = envoyer / Shift+Enter = nouvelle ligne
-      if (!e.shiftKey) {
-        e.preventDefault();
-        sendMessage(input);
-      }
+    // Backspace sur un champ vide retire le badge outil actif
+    if (e.key === "Backspace" && input === "" && activeTool) {
+      e.preventDefault();
+      clearActiveTool();
+      return;
     }
+    // Enter simple = envoyer / Shift+Enter = nouvelle ligne
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submitComposer();
+    }
+  }
+
+  function handleToolSelect(tool: ToolOption) {
+    setActiveTool(tool);
+    setInput("");
+    setShowTools(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function clearActiveTool() {
+    setActiveTool(null);
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
   async function resetConversation() {
@@ -691,7 +777,10 @@ export default function AgentPage() {
                     {defaultActions.map((a) => (
                       <button
                         key={a}
-                        onClick={() => sendMessage(a)}
+                        onClick={() => {
+                          setActiveTool(null);
+                          sendMessage(a);
+                        }}
                         disabled={!canChat}
                         className="text-left text-xs bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 p-3 rounded-xl transition group disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -859,7 +948,10 @@ export default function AgentPage() {
                     {currentSuggestions.map((action) => (
                       <button
                         key={action}
-                        onClick={() => sendMessage(action)}
+                        onClick={() => {
+                          setActiveTool(null);
+                          sendMessage(action);
+                        }}
                         className="text-xs bg-white border border-indigo-100 text-indigo-700 px-3 py-1.5 rounded-full hover:bg-indigo-50 hover:border-indigo-300 transition font-medium flex items-center gap-1.5"
                       >
                         <Sparkles size={11} />
@@ -874,19 +966,50 @@ export default function AgentPage() {
                   onSubmit={handleSubmit}
                   className="relative flex items-end gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-2 focus-within:border-indigo-400 focus-within:ring-4 focus-within:ring-indigo-500/10 transition"
                 >
-                  <textarea
-                    ref={textareaRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Ex : Boulangeries à 4000 Liège…"
-                    rows={1}
-                    disabled={loading}
-                    className="flex-1 resize-none bg-transparent px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none max-h-[200px] leading-relaxed"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTools(true)}
+                    title="Outils de repérage"
+                    aria-label="Ouvrir les outils de repérage"
+                    className="h-9 w-9 shrink-0 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition active:scale-95"
+                  >
+                    <Wrench size={15} />
+                  </button>
+
+                  {/* Zone de saisie : badge outil (mauve clair) + texte libre */}
+                  <div className="flex-1 flex flex-wrap items-center gap-1.5 px-1 py-1.5 min-h-[36px]">
+                    {activeTool && (
+                      <span className="inline-flex items-center gap-1.5 bg-violet-100 border border-violet-200 text-violet-700 text-xs font-semibold pl-3 pr-1.5 py-1 rounded-full shrink-0 animate-[fadeIn_.15s_ease-out]">
+                        {activeTool.starter.trim()}
+                        <button
+                          type="button"
+                          onClick={clearActiveTool}
+                          aria-label="Retirer l'outil sélectionné"
+                          className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-violet-200 transition"
+                        >
+                          <X size={10} />
+                        </button>
+                      </span>
+                    )}
+                    <textarea
+                      ref={textareaRef}
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder={
+                        activeTool
+                          ? "Complétez votre demande…"
+                          : "Ex : Boulangeries à 4000 Liège…"
+                      }
+                      rows={1}
+                      disabled={loading}
+                      className="flex-1 min-w-[140px] resize-none bg-transparent px-1 py-0.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none max-h-[200px] leading-relaxed"
+                    />
+                  </div>
+
                   <button
                     type="submit"
-                    disabled={loading || !input.trim()}
+                    disabled={loading || (!input.trim() && !activeTool)}
                     aria-label="Envoyer le message"
                     title="Envoyer (Entrée) · Nouvelle ligne (Maj+Entrée)"
                     className="h-9 w-9 shrink-0 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm shadow-indigo-600/20 active:scale-95"
@@ -1186,6 +1309,45 @@ export default function AgentPage() {
           l&apos;IA BelgoData. Validez les données critiques avant démarchage.
         </footer>
       </div>
+
+      {/* ══ MODALE OUTILS DE REPÉRAGE ══ */}
+      {showTools && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl p-6 animate-[fadeIn_.2s_ease-out]">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-slate-900">
+                Outils de repérage
+              </h2>
+              <button
+                onClick={() => setShowTools(false)}
+                aria-label="Fermer les outils"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {toolOptions.map((tool) => (
+                <button
+                  key={tool.id}
+                  onClick={() => handleToolSelect(tool)}
+                  className="flex flex-col items-center text-center gap-2 p-4 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/40 transition-all"
+                >
+                  <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center">
+                    {tool.icon}
+                  </div>
+                  <span className="text-sm font-bold text-slate-800">
+                    {tool.label}
+                  </span>
+                  <span className="text-xs text-slate-500 leading-snug">
+                    {tool.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Animations locales (à ajouter dans tailwind.config si absentes) */}
       <style jsx global>{`
