@@ -119,7 +119,7 @@ def insert_prospects(prospects: list[dict], user_id: Optional[str] = None, user_
         "totalFound": len(prospects),
         "inserted": inserted,
         "skipped": skipped,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": datetime.now(timezone.utc),
     })
 
     return {"inserted": inserted, "skipped": skipped, "session_id": session_id, "new_prospects": new_prospects}

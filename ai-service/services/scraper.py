@@ -573,8 +573,8 @@ def normalize_osm_element(element: dict, postal_code: str) -> dict | None:
         "score": None,
         "osm_id": element.get("id"),
         "osm_type": element.get("type"),
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": datetime.now(timezone.utc),
+        "updatedAt": datetime.now(timezone.utc),
     }
 
 

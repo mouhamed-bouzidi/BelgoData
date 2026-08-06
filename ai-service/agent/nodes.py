@@ -1223,7 +1223,7 @@ def generate_report_node(state: AgentState) -> AgentState:
             "userId": state.get("user_id"),
             "userName": state.get("user_name"),
         },
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": datetime.now(timezone.utc),
     }
 
     reports_collection = db["reports"]
