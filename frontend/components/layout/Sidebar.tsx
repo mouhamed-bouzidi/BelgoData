@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "../../context/SidebarContext";
 import NotificationBell from "@/components/layout/NotificationBell";
+import { X } from "lucide-react";
 
 import {
   MessageSquare,
@@ -43,7 +44,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
-  const { collapsed, toggleSidebar, width } = useSidebar();
+  const { collapsed, toggleSidebar, mobileOpen, closeMobileSidebar, width } = useSidebar();
   const avatarUrl = (user as { avatarUrl?: string } | undefined)?.avatarUrl;
 
   // État pour bloquer le rendu dynamique pendant l'hydratation SSR
@@ -63,10 +64,11 @@ export default function Sidebar() {
   }
 
   return (
-    <aside
-      className="h-screen bg-sidebar-bg text-white flex flex-col fixed left-0 top-0 z-40 overflow-visible transition-[width] duration-300 ease-in-out"
-      style={{ width }}
-    >
+    <>
+      <aside
+        className="hidden lg:flex h-screen bg-sidebar-bg text-white flex-col fixed left-0 top-0 z-40 overflow-visible transition-[width] duration-300 ease-in-out"
+        style={{ width }}
+      >
       {/* En-tête / Logo */}
       <div
         className={`relative flex items-center border-b border-white/10 transition-all duration-300 ${
@@ -226,5 +228,130 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
-  );
+
+    <div
+      className={`fixed inset-0 z-50 lg:hidden transition-all duration-300 ${mobileOpen ? "visible opacity-100" : "invisible opacity-0"}`}
+      aria-hidden={!mobileOpen}
+    >
+      <button
+        type="button"
+        onClick={closeMobileSidebar}
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        aria-label="Fermer le menu mobile"
+      />
+
+      <aside
+        className={`relative z-50 flex h-full w-72 flex-col bg-sidebar-bg text-white transition-transform duration-300 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 relative overflow-hidden rounded-lg bg-white/10">
+              <Image
+                src="/logo1.png"
+                alt="BelgoData Logo"
+                fill
+                sizes="40px"
+                className="object-contain"
+                priority
+              />
+            </div>
+            <div>
+              <div className="font-semibold text-sm">BelgoData</div>
+              <div className="text-xs text-white/60">Belgique</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={closeMobileSidebar}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+            aria-label="Fermer le menu"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-visible [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
+          <ul className="space-y-1">
+            {navItems
+              .filter((item) => !item.roles || (mounted && item.roles.includes(user?.role || "")))
+              .map((item) => {
+                const isActive = item.href === "/"
+                  ? pathname === "/"
+                  : pathname === item.href || pathname.startsWith(item.href + "/");
+
+                const Icon = item.icon;
+                return (
+                  <li key={item.href} className="relative group/item">
+                    <Link
+                      href={item.href}
+                      className={`group flex items-center rounded-lg text-sm transition-all duration-200 gap-3 px-3 py-2.5 ${
+                        isActive
+                          ? "bg-accent text-white shadow-lg shadow-accent/30 font-medium"
+                          : "text-white/70 hover:bg-sidebar-hover hover:text-white"
+                      }`}
+                      onClick={closeMobileSidebar}
+                    >
+                      <Icon
+                        size={18}
+                        strokeWidth={2}
+                        className={`flex-shrink-0 transition-transform duration-300 ease-out ${
+                          isActive
+                            ? "scale-110 -translate-y-0.5 text-white"
+                            : "group-hover:scale-110 group-hover:text-white"
+                        }`}
+                      />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+          </ul>
+        </nav>
+
+        <div className="p-3 border-t border-white/5 space-y-2">
+          <Link
+            href="/profil"
+            className="group flex items-center gap-3 bg-sidebar-hover rounded-lg px-3 py-3 hover:bg-white/10 transition-colors"
+            onClick={closeMobileSidebar}
+          >
+            <div className="w-9 h-9 rounded-full bg-accent flex items-center justify-center text-sm font-semibold overflow-hidden shadow-inner relative">
+              {mounted && avatarUrl ? (
+                <Image
+                  src={avatarUrl}
+                  alt="Avatar"
+                  fill
+                  sizes="36px"
+                  className="object-cover"
+                />
+              ) : (
+                <span>{mounted && user?.name ? user.name.slice(0, 2).toUpperCase() : "?"}</span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate group-hover:text-[#8b5cf6] transition-colors">
+                {mounted && user?.name ? user.name : "Utilisateur"}
+              </div>
+              <div className="text-xs text-white/50 truncate">
+                {mounted && user?.role ? user.role : ""}
+              </div>
+            </div>
+          </Link>
+
+          <button
+            onClick={() => {
+              handleLogout();
+              closeMobileSidebar();
+            }}
+            className="w-full flex items-center gap-2 text-sm text-white/70 hover:bg-sidebar-hover hover:text-white rounded-lg px-3 py-2.5 transition-colors"
+          >
+            <LogOut size={18} strokeWidth={2} className="flex-shrink-0" />
+            <span>Déconnexion</span>
+          </button>
+        </div>
+      </aside>
+    </div>
+  </>
+);
 }

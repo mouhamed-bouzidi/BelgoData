@@ -74,8 +74,14 @@ export default function ProfilePage() {
   return (
     <div className="p-8 bg-slate-50/30 min-h-screen space-y-8">
       <div>
-        <h1 className="text-3xl font-black text-gray-900 tracking-tight">Mon Profil</h1>
-        <p className="text-sm font-medium text-gray-400 mt-0.5">
+        <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+          Mon Profil
+        </div>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-800 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent tracking-tight">
+          Mon Profil
+        </h1>
+        <p className="text-sm text-gray-500 mt-1.5">
           Gérez vos informations personnelles et configurez votre identité BelgoData
         </p>
       </div>

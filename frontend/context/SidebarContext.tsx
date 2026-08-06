@@ -9,7 +9,10 @@ export const SIDEBAR_WIDTH_COMPACT = 72;
 
 interface SidebarContextType {
   collapsed: boolean;
+  mobileOpen: boolean;
   toggleSidebar: () => void;
+  toggleMobileSidebar: () => void;
+  closeMobileSidebar: () => void;
   setCollapsed: (value: boolean) => void;
   width: number;
 }
@@ -19,6 +22,7 @@ const SidebarContext = createContext<SidebarContextType | null>(null);
 export function SidebarProvider({ children }: { children: ReactNode }) {
   // false = état normal (280px), true = état compact (72px)
   const [collapsed, setCollapsedState] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   // Lecture de la préférence utilisateur au montage (persistance locale)
@@ -39,13 +43,24 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
     setCollapsed(!collapsed);
   }
 
+  function toggleMobileSidebar() {
+    setMobileOpen((prev) => !prev);
+  }
+
+  function closeMobileSidebar() {
+    setMobileOpen(false);
+  }
+
   const width = collapsed ? SIDEBAR_WIDTH_COMPACT : SIDEBAR_WIDTH_NORMAL;
 
   return (
     <SidebarContext.Provider
       value={{
         collapsed: mounted ? collapsed : false,
+        mobileOpen,
         toggleSidebar,
+        toggleMobileSidebar,
+        closeMobileSidebar,
         setCollapsed,
         width: mounted ? width : SIDEBAR_WIDTH_NORMAL,
       }}

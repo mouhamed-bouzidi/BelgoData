@@ -129,11 +129,15 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen space-y-8 animate-fade-in">
+    <div className="p-4 sm:p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen space-y-8 animate-fade-in">
       {/* HEADER */}
       <div className="relative">
         <div className="absolute -top-4 -left-4 w-32 h-32 bg-violet-200/30 rounded-full blur-3xl pointer-events-none" aria-hidden />
-        <h1 className="relative text-3xl font-black tracking-tight bg-gradient-to-r from-slate-900 via-slate-800 to-[#6d5ef0] bg-clip-text text-transparent">
+        <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+          Utilisateurs
+        </div>
+        <h1 className="relative text-3xl font-black tracking-tight bg-gradient-to-r from-purple-800 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent">
           Gestion des Utilisateurs
         </h1>
         <p className="relative text-sm font-medium text-slate-500 mt-1.5">
@@ -150,14 +154,14 @@ export default function UsersPage() {
       {/* TABLEAU DES UTILISATEURS */}
       <div className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-3xl shadow-[0_4px_24px_-8px_rgba(109,94,240,0.08)] overflow-hidden transition-all duration-300 hover:shadow-[0_8px_32px_-8px_rgba(109,94,240,0.15)]">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+          <table className="w-full min-w-[720px] text-sm text-left">
             <thead>
               <tr className="text-slate-500 border-b border-slate-100 text-[11px] font-bold uppercase tracking-wider bg-gradient-to-r from-violet-50/40 via-slate-50/30 to-transparent">
                 <th className="px-6 py-4 font-bold">Utilisateur</th>
                 <th className="px-6 py-4 font-bold">Coordonnées</th>
                 <th className="px-6 py-4 font-bold">Rôle</th>
                 <th className="px-6 py-4 font-bold">Statut</th>
-                <th className="px-6 py-4 font-bold">Dernière Connexion</th>
+                <th className="px-6 py-4 font-bold hidden md:table-cell">Dernière Connexion</th>
                 <th className="px-6 py-4 font-bold text-right">Actions</th>
               </tr>
             </thead>
@@ -244,7 +248,7 @@ export default function UsersPage() {
                     </td>
 
                     {/* Dernière Connexion */}
-                    <td className="px-6 py-4 text-slate-500 text-xs font-medium">
+                    <td className="px-6 py-4 text-slate-500 text-xs font-medium hidden md:table-cell">
                       <div className="flex items-center gap-1.5">
                         <Calendar size={13} className="text-violet-400" />
                         <span>

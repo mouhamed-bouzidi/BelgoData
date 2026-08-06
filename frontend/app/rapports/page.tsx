@@ -41,26 +41,33 @@ export default function ReportsListPage() {
     return activeToken ? { headers: { Authorization: `Bearer ${activeToken}` } } : {};
   }, [token]);
 
-  const fetchReports = useCallback(async () => {
-    setLoading(true);
-    try {
-      const config = {
-        ...getAuthConfig(),
-        params: { page, limit }
-      };
-      const res = await axios.get(`${API_URL}/api/reports`, config);
-      setReports(res.data.results || []);
-      setTotal(res.data.total || 0);
-    } catch (error) {
-      console.error("Erreur chargement bilans:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [page, limit, getAuthConfig]);
-
   useEffect(() => {
-    fetchReports();
-  }, [fetchReports]);
+    let active = true;
+
+    async function loadReports() {
+      if (!active) return;
+      setLoading(true);
+      try {
+        const config = {
+          ...getAuthConfig(),
+          params: { page, limit },
+        };
+        const res = await axios.get(`${API_URL}/api/reports`, config);
+        if (!active) return;
+        setReports(res.data.results || []);
+        setTotal(res.data.total || 0);
+      } catch (error) {
+        console.error("Erreur chargement bilans:", error);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    void loadReports();
+    return () => {
+      active = false;
+    };
+  }, [page, limit, getAuthConfig]);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) =>
@@ -109,9 +116,9 @@ export default function ReportsListPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="p-8 min-h-screen bg-gradient-to-br from-purple-50/40 via-white to-fuchsia-50/30">
+    <div className="p-4 sm:p-8 min-h-screen bg-gradient-to-br from-purple-50/40 via-white to-fuchsia-50/30">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col gap-4 justify-between mb-8 sm:flex-row sm:items-center">
         <div>
           <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
             <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
@@ -156,100 +163,100 @@ export default function ReportsListPage() {
             Aucun bilan généré encore. Demandez à l&apos;Agent IA de générer un bilan pour une entreprise.
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 border-b border-purple-100/70 text-xs uppercase tracking-wider bg-purple-50/30">
-                <th className="px-5 py-3.5 w-4">
-                  <input
-                    type="checkbox"
-                    checked={reports.length > 0 && selectedIds.length === reports.length}
-                    onChange={() =>
-                      setSelectedIds((prev) =>
-                        prev.length === reports.length ? [] : reports.map((r) => r._id)
-                      )
-                    }
-                    className="rounded border-purple-300 text-purple-600 focus:ring-purple-400"
-                  />
-                </th>
-                <th className="px-5 py-3.5 font-semibold">Entreprise</th>
-                <th className="px-5 py-3.5 font-semibold">Secteur</th>
-                <th className="px-5 py-3.5 font-semibold">Demandé par</th>
-                <th className="px-5 py-3.5 font-semibold">Localisation</th>
-                <th className="px-5 py-3.5 font-semibold">Score</th>
-                <th className="px-5 py-3.5 font-semibold">Généré le</th>
-                <th className="px-5 py-3.5 font-semibold text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((r) => (
-                <tr
-                  key={r._id}
-                  className="border-b border-purple-50 last:border-0 hover:bg-gradient-to-r hover:from-purple-50/60 hover:to-fuchsia-50/30 cursor-pointer transition-colors duration-200"
-                  onClick={() => router.push(`/rapports/${r._id}`)}
-                >
-                  <td className="px-5 py-4" onClick={(e) => e.stopPropagation()}>
+          <div className="overflow-x-auto">
+            <table className="w-full table-auto text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 border-b border-purple-100/70 text-[11px] uppercase tracking-wider bg-purple-50/30">
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 w-4">
                     <input
                       type="checkbox"
-                      checked={selectedIds.includes(r._id)}
-                      onChange={() => toggleSelect(r._id)}
+                      checked={reports.length > 0 && selectedIds.length === reports.length}
+                      onChange={() =>
+                        setSelectedIds((prev) =>
+                          prev.length === reports.length ? [] : reports.map((r) => r._id)
+                        )
+                      }
                       className="rounded border-purple-300 text-purple-600 focus:ring-purple-400"
                     />
-                  </td>
-                  <td className="px-5 py-4 font-medium text-gray-900">
-                    <div className="flex items-center gap-3">
-                      <div className="ring-2 ring-purple-100 rounded-full transition-transform duration-200 group-hover:scale-105">
-                        <CategoryIconCircle category={r.category} />
-                      </div>
-                      <span className="tracking-tight">{r.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4">
-                    <CategoryBadge category={r.category} />
-                  </td>
-                  <td className="px-5 py-4 text-gray-600">
-                    {r.requestedBy?.userName || "Système"}
-                  </td>
-                  <td className="px-5 py-4 text-gray-600">
-                    {r.address?.city} <span className="text-gray-400">({r.address?.postcode})</span>
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${scoreColor(r.score)}`}>
-                      {r.score}/100
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-gray-400 text-xs">
-                    {new Date(r.createdAt).toLocaleDateString("fr-BE")}
-                  </td>
-                  <td className="px-5 py-4 text-center" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-center gap-1.5">
-                      <button
-                        onClick={() => router.push(`/rapports/${r._id}`)}
-                        className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all duration-200 hover:scale-110"
-                        title="Voir le bilan"
-                      >
-                        <Eye size={15} />
-                      </button>
-
-                      {/* Affichage conditionnel de l'action de suppression */}
-                      {canModify ? (
-                        <button
-                          onClick={() => handleDelete(r._id, r.name)}
-                          className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all duration-200 hover:scale-110"
-                          title="Supprimer"
-                        >
-                          <Trash2 size={15} />
-                        </button>
-                      ) : (
-                        <span className="p-2 text-slate-300 cursor-not-allowed" title="Action non autorisée">
-                          <Lock size={14} />
-                        </span>
-                      )}
-                    </div>
-                  </td>
+                  </th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold">Entreprise</th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold">Secteur</th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold hidden sm:table-cell">Demandé par</th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold hidden sm:table-cell">Localisation</th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold">Score</th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold hidden sm:table-cell">Généré le</th>
+                  <th className="px-3 py-3.5 sm:px-5 sm:py-4 font-semibold text-center">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {reports.map((r) => (
+                  <tr
+                    key={r._id}
+                    className="border-b border-purple-50 last:border-0 hover:bg-gradient-to-r hover:from-purple-50/60 hover:to-fuchsia-50/30 cursor-pointer transition-colors duration-200"
+                    onClick={() => router.push(`/rapports/${r._id}`)}
+                  >
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(r._id)}
+                        onChange={() => toggleSelect(r._id)}
+                        className="rounded border-purple-300 text-purple-600 focus:ring-purple-400"
+                      />
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4 font-medium text-gray-900">
+                      <div className="flex items-center gap-3">
+                        <div className="ring-2 ring-purple-100 rounded-full transition-transform duration-200 group-hover:scale-105">
+                          <CategoryIconCircle category={r.category} />
+                        </div>
+                        <span className="tracking-tight">{r.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4">
+                      <CategoryBadge category={r.category} />
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4 text-gray-600 hidden sm:table-cell">
+                      {r.requestedBy?.userName || "Système"}
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4 text-gray-600 hidden sm:table-cell">
+                      {r.address?.city} <span className="text-gray-400">({r.address?.postcode})</span>
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${scoreColor(r.score)}`}>
+                        {r.score}/100
+                      </span>
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4 text-gray-400 text-xs hidden sm:table-cell">
+                      {new Date(r.createdAt).toLocaleDateString("fr-BE")}
+                    </td>
+                    <td className="px-3 py-3.5 sm:px-5 sm:py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => router.push(`/rapports/${r._id}`)}
+                          className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all duration-200 hover:scale-110"
+                          title="Voir le bilan"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        {canModify ? (
+                          <button
+                            onClick={() => handleDelete(r._id, r.name)}
+                            className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all duration-200 hover:scale-110"
+                            title="Supprimer"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        ) : (
+                          <span className="p-2 text-slate-300 cursor-not-allowed" title="Action non autorisée">
+                            <Lock size={14} />
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

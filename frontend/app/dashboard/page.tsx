@@ -8,7 +8,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
   Tooltip,
 } from "recharts";
 
@@ -109,7 +108,7 @@ export default function DashboardPage() {
   }));
 
   return (
-    <div className="p-8 min-h-screen space-y-8 animate-fade-in bg-gradient-to-br from-violet-50/40 via-white to-purple-50/30 text-slate-800">
+    <div className="p-4 sm:p-8 min-h-screen space-y-8 animate-fade-in bg-gradient-to-br from-violet-50/40 via-white to-purple-50/30 text-slate-800">
 
       {/* CSS Injecté pour customiser la scrollbar de la liste par secteur */}
       <style jsx global>{`
@@ -132,13 +131,16 @@ export default function DashboardPage() {
       `}</style>
 
       {/* HEADER */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
         <div>
-          <div className="flex items-center gap-3">
-            <span className="w-1.5 h-8 rounded-full bg-gradient-to-b from-[#7c6df2] to-[#a78bfa]"></span>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">Dashboard</h1>
+          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+            Dashboard
           </div>
-          <p className="text-sm font-medium text-slate-500 mt-1.5 ml-4">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-800 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent tracking-tight">
+            Dashboard
+          </h1>
+          <p className="text-sm text-slate-500 mt-1.5">
             Vue analytique et intelligence de marché sur la Belgique
           </p>
         </div>
@@ -152,7 +154,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI CARDS */}
-      <div className="grid grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
         <KpiCard icon={Building2} label="Total entreprises" value={stats.total} color="accent" />
         <KpiCard icon={Mail} label="Emails trouvés" value={stats.emailsCount} color="blue" />
         <KpiCard icon={Globe} label="Sites web trouvés" value={stats.websitesCount} color="green" />
@@ -160,7 +162,7 @@ export default function DashboardPage() {
       </div>
 
       {/* GRAPH SECTIONS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
 
         {/* BLOCK : RÉPARTITION PAR SECTEUR */}
         <div className="relative bg-white/90 backdrop-blur-sm border border-violet-100/70 rounded-2xl p-6 shadow-[0_8px_28px_-14px_rgba(124,109,242,0.18)] flex flex-col justify-between transition-all duration-300 hover:shadow-[0_12px_32px_-12px_rgba(124,109,242,0.28)] hover:border-violet-200 overflow-hidden">
@@ -170,13 +172,12 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-500 mt-0.5">Segmentation d&apos;activité de vos leads</p>
           </div>
 
-          <div className="relative flex items-center gap-8 mt-6">
-            <div className="relative flex items-center justify-center shrink-0">
+          <div className="relative flex flex-col gap-6 lg:flex-row items-center mt-6">
+            <div className="relative flex items-center justify-center shrink-0 mx-auto lg:mx-0" style={{ width: 180, height: 180 }}>
               <div className="absolute inset-0 rounded-full bg-gradient-to-br from-violet-100/60 to-purple-100/40 blur-xl"></div>
-              <ResponsiveContainer width={180} height={180}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
+              <PieChart width={180} height={180}>
+                <Pie
+                  data={categoryData}
                     dataKey="value"
                     nameKey="name"
                     innerRadius={60}
@@ -192,8 +193,7 @@ export default function DashboardPage() {
                     itemStyle={{ color: '#fff' }}
                   />
                 </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute flex flex-col items-center justify-center">
+              <div className="absolute flex flex-col items-center justify-center" style={{ width: 180, height: 180 }}>
                 <span className="text-2xl font-black text-slate-900">{stats.total}</span>
                 <span className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Leads</span>
               </div>

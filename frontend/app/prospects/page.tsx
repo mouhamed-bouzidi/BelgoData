@@ -256,9 +256,21 @@ export default function ProspectsPage() {
   };
 
   return (
-    <div className="p-8 bg-[#f8fafc] min-h-screen text-[#1e293b]">
+    <div className="p-4 sm:p-8 bg-[#f8fafc] min-h-screen text-[#1e293b]">
       {/* HEADER SECTION */}
-      <div className="flex justify-between items-center mb-1">
+      <div className="mb-8">
+        <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
+          <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+          Prospection
+        </div>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-800 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent tracking-tight">
+          Prospects
+        </h1>
+        <p className="text-sm text-gray-500 mt-1.5">
+          Liste des prospects collectés et suivis par votre équipe.
+        </p>
+      </div>
+      <div className="flex flex-col gap-4 justify-between mb-1 sm:flex-row sm:items-center">
         <h1 className="text-2xl font-bold tracking-tight text-[#0f172a]">Prospects</h1>
         <div className="flex gap-3">
           {mounted && (
@@ -281,54 +293,54 @@ export default function ProspectsPage() {
       <p className="text-sm text-slate-500 mb-8">Gérez et consultez l&apos;ensemble de vos entreprises prospects</p>
 
       {/* STATS CARDS SECTION */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-indigo-50 rounded-xl text-indigo-600">
-            <Building2 size={22} />
+      <div className="mx-auto max-w-screen-xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 mb-8">
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-indigo-50 rounded-2xl text-indigo-600">
+            <Building2 size={20} />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Total prospects</p>
-            <p className="text-xl font-bold text-slate-800">{stats.total}</p>
+            <p className="text-[11px] text-slate-400 font-medium">Total prospects</p>
+            <p className="text-lg font-bold text-slate-800">{stats.total}</p>
             {renderTrend(stats.trends.total)}
           </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 rounded-xl text-emerald-600">
-            <Mail size={22} />
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-50 rounded-2xl text-emerald-600">
+            <Mail size={20} />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Emails trouvés</p>
-            <p className="text-xl font-bold text-slate-800">{stats.emailsCount}</p>
+            <p className="text-[11px] text-slate-400 font-medium">Emails trouvés</p>
+            <p className="text-lg font-bold text-slate-800">{stats.emailsCount}</p>
             {renderTrend(stats.trends.emails)}
           </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-blue-50 rounded-xl text-blue-600">
-            <Globe size={22} />
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-blue-50 rounded-2xl text-blue-600">
+            <Globe size={20} />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Sites web trouvés</p>
-            <p className="text-xl font-bold text-slate-800">{stats.websitesCount}</p>
+            <p className="text-[11px] text-slate-400 font-medium">Sites web trouvés</p>
+            <p className="text-lg font-bold text-slate-800">{stats.websitesCount}</p>
             {renderTrend(stats.trends.websites)}
           </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-amber-50 rounded-xl text-amber-500">
-            <Star size={22} />
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-amber-50 rounded-2xl text-amber-500">
+            <Star size={20} />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Score moyen</p>
-            <p className="text-xl font-bold text-slate-800">{stats.avgScore}<span className="text-xs text-slate-400"> /100</span></p>
+            <p className="text-[11px] text-slate-400 font-medium">Score moyen</p>
+            <p className="text-lg font-bold text-slate-800">{stats.avgScore}<span className="text-[11px] text-slate-400"> /100</span></p>
             {renderTrend(stats.trends.avgScore)}
           </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-rose-50 rounded-xl text-rose-500">
-            <Target size={22} />
+        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-3">
+          <div className="p-2.5 bg-rose-50 rounded-2xl text-rose-500">
+            <Target size={20} />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Leads chauds</p>
-            <p className="text-xl font-bold text-slate-800">{stats.hotLeads}</p>
+            <p className="text-[11px] text-slate-400 font-medium">Leads chauds</p>
+            <p className="text-lg font-bold text-slate-800">{stats.hotLeads}</p>
             {renderTrend(stats.trends.hotLeads)}
           </div>
         </div>
@@ -347,7 +359,7 @@ export default function ProspectsPage() {
           />
         </div>
 
-        <div className="flex items-end gap-4 flex-wrap md:flex-nowrap">
+        <div className="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-end lg:flex-nowrap">
           <div className="flex-1 min-w-[120px]">
             <label className="text-xs font-semibold text-slate-500 block mb-1.5">Source</label>
             <select
@@ -456,7 +468,7 @@ export default function ProspectsPage() {
               Voir tous →
             </a>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
             {sessions.map((s) => (
               <a
                 key={s.sessionId}
@@ -503,7 +515,7 @@ export default function ProspectsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full min-w-[960px] text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                 <th className="p-4 w-4">
@@ -524,9 +536,9 @@ export default function ProspectsPage() {
                 <th className="p-4">Secteur</th>
                 <th className="p-4">Localisation</th>
                 <th className="p-4">Contact</th>
-                <th className="p-4">Créé par</th>
+                <th className="p-4 hidden lg:table-cell">Créé par</th>
                 <th className="p-4">Score IA</th>
-                <th className="p-4">Ajouté le</th>
+                <th className="p-4 hidden lg:table-cell">Ajouté le</th>
                 {mounted && canModify && <th className="p-4 text-center">Actions</th>}
               </tr>
             </thead>
@@ -610,7 +622,7 @@ export default function ProspectsPage() {
                       )}
                     </td>
 
-                    <td className="p-4 text-[11px] font-medium text-slate-400 whitespace-pre-line">
+                    <td className="p-4 text-[11px] font-medium text-slate-400 whitespace-pre-line hidden lg:table-cell">
                       {formatDate(p.createdAt)}
                     </td>
 

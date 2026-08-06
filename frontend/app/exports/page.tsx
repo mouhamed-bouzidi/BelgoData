@@ -92,13 +92,19 @@ export default function ExportsPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       {/* Header */}
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-6 flex flex-col gap-4 justify-between sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Exports</h1>
+          <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
+            <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+            Exports
+          </div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-800 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent tracking-tight">
+            Exports
+          </h1>
           <p className="text-sm text-gray-500">
-            Téléchargez vos données de prospection dans le format de votre choix
+            Téléchargez vos données de prospection ou vos bilans IA en quelques clics.
           </p>
         </div>
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm">
@@ -108,8 +114,8 @@ export default function ExportsPage() {
       </div>
 
       {/* KPIs rapides */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-card-bg border border-border-color rounded-xl p-5 flex items-center gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <div className="bg-card-bg border border-border-color rounded-2xl p-5 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-accent/10 text-accent flex items-center justify-center">
             <Building2 size={22} />
           </div>
@@ -129,10 +135,10 @@ export default function ExportsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Export Prospects */}
-        <div className="bg-card-bg border border-border-color rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-1">
+        <div className="bg-card-bg border border-border-color rounded-2xl p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-1">
             <Building2 size={20} className="text-accent" />
             <h2 className="font-semibold text-gray-900">Exporter les prospects</h2>
           </div>
@@ -205,8 +211,8 @@ export default function ExportsPage() {
         </div>
 
         {/* Export Bilans */}
-        <div className="bg-card-bg border border-border-color rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-1">
+        <div className="bg-card-bg border border-border-color rounded-2xl p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center mb-1">
             <FileBarChart size={20} className="text-blue" />
             <h2 className="font-semibold text-gray-900">Exporter un bilan</h2>
           </div>

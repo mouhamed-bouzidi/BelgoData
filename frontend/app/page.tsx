@@ -747,11 +747,11 @@ export default function AgentPage() {
         )}
 
         {/* ZONE DE TRAVAIL */}
-        <div className="flex-1 flex overflow-hidden p-4 gap-4">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 gap-4">
           {/* ── COLONNE CHAT ── */}
           <div
             className={`bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${
-              activeReport || activeScrapeResults ? "w-7/12" : "w-full"
+              activeReport || activeScrapeResults ? "w-full lg:w-7/12" : "w-full"
             }`}
           >
             {/* Fil de discussion */}
@@ -813,7 +813,7 @@ export default function AgentPage() {
                     )}
 
                     <div
-                      className={`max-w-[78%] flex flex-col ${
+                      className={`max-w-full sm:max-w-[78%] flex flex-col ${
                         msg.role === "user" ? "items-end" : "items-start"
                       }`}
                     >
@@ -1033,7 +1033,7 @@ export default function AgentPage() {
 
           {/* ══ PANNEAU BILAN ══ */}
           {activeReport && (
-            <div className="w-5/12 bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-[slideIn_.3s_ease-out]">
+            <div className="w-full lg:w-5/12 bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-[slideIn_.3s_ease-out]">
               <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
@@ -1198,7 +1198,7 @@ export default function AgentPage() {
 
           {/* ══ PANNEAU SCRAPING ══ */}
           {!activeReport && activeScrapeResults && (
-            <div className="w-5/12 bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-[slideIn_.3s_ease-out]">
+            <div className="w-full lg:w-5/12 bg-white border border-slate-200/70 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-[slideIn_.3s_ease-out]">
               <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">

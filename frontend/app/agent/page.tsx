@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, type ReactNode } from "react";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import axios from "axios";
@@ -84,6 +84,30 @@ export default function AgentPage() {
   function nowTime() {
     return new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
   }
+
+  const renderMessageContent = (content: string): ReactNode[] => {
+    const lines = content.split("\n");
+    return lines.flatMap((line, lineIndex) => {
+      const parts = line.split(/(\*\*[^*]+\*\*)/g);
+      const nodes = parts.map((part, partIndex) => {
+        const boldMatch = part.match(/^\*\*(.+)\*\*$/);
+        if (boldMatch) {
+          return (
+            <strong key={`${lineIndex}-${partIndex}`} className="font-semibold">
+              {boldMatch[1]}
+            </strong>
+          );
+        }
+        return part;
+      });
+
+      if (lineIndex < lines.length - 1) {
+        return [...nodes, <br key={`br-${lineIndex}`} />];
+      }
+
+      return nodes;
+    });
+  };
 
   const { user, token } = useAuth();
   const avatarUrl = user?.avatarUrl;
@@ -389,10 +413,10 @@ export default function AgentPage() {
           Vous n&apos;avez pas l&apos;accès pour discuter avec le chat. Contactez l&apos;administrateur.
         </div>
       )}
-      <div className="flex-1 flex overflow-hidden p-4 gap-4 relative">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 gap-4 relative">
         
         {/* COLONNE CHAT */}
-        <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${activeReport ? "w-7/12" : "w-full"}`}>
+        <div className={`bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden transition-all duration-300 ${activeReport ? "w-full lg:w-7/12" : "w-full"}`}>
           
           {/* Fil de discussion */}
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-gradient-to-b from-slate-50/50 to-white">
@@ -406,16 +430,16 @@ export default function AgentPage() {
                   </div>
                 )}
 
-                <div className={`max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                <div className={`max-w-full sm:max-w-[78%] flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
                   {/* Bulle de texte */}
                   <div
                     className={`px-4 py-3 rounded-2xl text-[14px] leading-relaxed shadow-sm ${
                       msg.role === "user"
                         ? "bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-none font-medium"
-                        : "bg-white border border-slate-100 text-slate-800 rounded-tl-none whitespace-pre-line"
+                        : "bg-white border border-slate-100 text-slate-800 rounded-tl-none"
                     }`}
                   >
-                    {msg.content}
+                    {msg.role === "agent" ? renderMessageContent(msg.content) : msg.content}
                   </div>
 
                   {/* Bouton de rappel de rapport contextuel */}
@@ -536,7 +560,7 @@ export default function AgentPage() {
 
         {/* PANNEAU LATÉRAL MODERNE (BILAN) */}
         {activeReport && (
-          <div className="w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
+          <div className="w-full lg:w-5/12 bg-white border border-slate-200/80 rounded-2xl flex flex-col shadow-sm overflow-hidden animate-fade-in">
             
             {/* Header du panneau */}
             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">

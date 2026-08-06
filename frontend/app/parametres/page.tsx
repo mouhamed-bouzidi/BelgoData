@@ -141,12 +141,17 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-8 bg-content-bg min-h-screen text-gray-900">
-      <form onSubmit={handleSubmit}>
+    <div className="p-4 sm:p-8 bg-content-bg min-h-screen text-gray-900">
+      <div className="mx-auto max-w-[1400px]">
+        <form onSubmit={handleSubmit}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col gap-4 justify-between mb-6 sm:flex-row sm:items-center">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Paramètres</h1>
+            <div className="inline-flex items-center gap-2 mb-2 px-3 py-1 rounded-full bg-purple-100/70 text-purple-700 text-xs font-medium ring-1 ring-purple-200/60">
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+              Paramètres
+            </div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-800 via-purple-600 to-fuchsia-600 bg-clip-text text-transparent tracking-tight">Paramètres</h1>
             <p className="text-sm text-gray-500">Configurez les paramètres généraux de la plateforme.</p>
           </div>
           <button
@@ -184,8 +189,8 @@ export default function SettingsPage() {
 
         {/* Main Content Grid (Optimized Layout) */}
         {activeTab === "Général" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 space-y-5">
               
               {/* Company Info Box */}
               <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm">
@@ -284,7 +289,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Right Column (Permissions Sidebar) */}
-            <div className="bg-white border border-border-color p-5 rounded-2xl space-y-4 shadow-sm h-fit text-xs">
+            <div className="bg-white border border-border-color p-4 rounded-2xl space-y-4 shadow-sm h-fit text-xs">
               <h3 className="text-sm font-bold text-gray-900">Autorisations par défaut</h3>
               <div className="space-y-3">
                 <div>
@@ -477,7 +482,8 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
-      </form>
+        </form>
+      </div>
     </div>
   );
 }

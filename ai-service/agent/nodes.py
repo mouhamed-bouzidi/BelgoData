@@ -77,9 +77,19 @@ DELETE_CONFIRMATION_TTL_SECONDS = 180
 # PROMPTS DE L'AGENT
 # =====================================================================
 GENERAL_PROMPT = """Tu es l'assistant IA de BelgoData, une plateforme de prospection B2B en Belgique.
-Réponds de façon naturelle et utile à ce message, même s'il ne concerne pas directement la prospection.
-Si pertinent, tu peux orienter la conversation vers tes capacités (recherche d'entreprises par secteur/ville en Belgique).
-Reste concis (3-4 phrases maximum).
+Réponds naturellement en français, de manière chaleureuse, professionnelle et utile.
+
+**Style requis :**
+- **Titres en gras**
+- **Sous-titres en gras**
+- listes à puces
+- séparateurs `---`
+- **mots importants en gras**
+- emojis uniquement pour guider l'œil, jamais pour décorer
+
+Sois moderne, structuré, facile à lire en moins de 5 secondes.
+Évite les gros paragraphes.
+Reste concis : 2 à 4 phrases ou 4 à 6 lignes maximum.
 
 Message: "{query}"
 """
@@ -783,7 +793,7 @@ def _format_prospect_line(position: int, prospect: dict) -> str:
     médaille pour le top 3, nom en gras, catégorie en italique, score mis
     en valeur, ville avec pictogramme, indicateurs email/site.
     """
-    icon = RANK_ICONS.get(position, f"**{position}.**")
+    icon = RANK_ICONS.get(position, f"{position}.")
     name = prospect.get("name") or "Entreprise sans nom"
     category = prospect.get("category")
     score = prospect.get("score")
@@ -792,11 +802,11 @@ def _format_prospect_line(position: int, prospect: dict) -> str:
     has_email = "📧" if prospect.get("email") else "❌📧"
     has_website = "🌐" if prospect.get("website") else "❌🌐"
 
-    parts = [f"{icon} **{name}**"]
+    parts = [f"{icon} {name}"]
     if category:
-        parts.append(f"_{category}_")
+        parts.append(f"{category}")
     if score is not None:
-        parts.append(f"⭐ **{score}/100**")
+        parts.append(f"⭐ {score}/100")
     if city:
         parts.append(f"📍 {city}")
     parts.append(f"{has_email} {has_website}")
@@ -882,7 +892,7 @@ def best_prospects_node(state: AgentState) -> AgentState:
             ville = (top.get("address") or {}).get("city") or (top.get("address") or {}).get("postcode") or ""
             lieu = f" à {ville}" if ville else ""
             state["response"] = (
-                f"🏆 Le {rank}ème meilleur prospect est **{nom}**{lieu} "
+                f"🏆 Le {rank}ème meilleur prospect est {nom}{lieu} "
                 f"(score {top.get('score', '?')}). Total correspondant : {total}."
             )
             state["suggested_actions"] = ["Voir le rapport d'un prospect", "Compter les prospects restants"]
@@ -913,7 +923,7 @@ def best_prospects_node(state: AgentState) -> AgentState:
             ville = (top.get("address") or {}).get("city") or (top.get("address") or {}).get("postcode") or ""
             lieu = f" à {ville}" if ville else ""
             state["response"] = (
-                f"🏆 Le meilleur prospect{criteres} est **{nom}**{lieu} "
+                f"🏆 Le meilleur prospect{criteres} est {nom}{lieu} "
                 f"(score {top.get('score', '?')}). Total correspondant : {total}."
             )
         else:
@@ -1017,9 +1027,9 @@ def delete_prospects_node(state: AgentState) -> AgentState:
         )
 
         state["response"] = (
-            f"⚠️ Cette action va supprimer **{total} prospect(s)**, par exemple : {preview_names}{more}.{gros_volume}\n"
+            f"⚠️ Cette action va supprimer {total} prospect(s), par exemple : {preview_names}{more}.{gros_volume}\n"
             f"Action réversible sous 30 jours (archivage), mais retirée de vos résultats immédiatement.\n"
-            f"Répondez **'oui, confirme la suppression'** dans les {DELETE_CONFIRMATION_TTL_SECONDS // 60} minutes pour valider."
+            f"Répondez 'oui, confirme la suppression' dans les {DELETE_CONFIRMATION_TTL_SECONDS // 60} minutes pour valider."
         )
         state["suggested_actions"] = ["Oui, confirme la suppression", "Annuler"]
         return state
@@ -1060,7 +1070,7 @@ def delete_prospects_node(state: AgentState) -> AgentState:
     state["prospects_sample"] = []
     state["scraped_count"] = result.modified_count
     state["response"] = (
-        f"🗑️ Suppression effectuée : **{result.modified_count} prospect(s)** retiré(s) de votre base "
+        f"🗑️ Suppression effectuée : {result.modified_count} prospect(s) retiré(s) de votre base "
         f"(archivés 30 jours, récupérables si erreur)."
     )
     state["suggested_actions"] = ["Compter les prospects restants", "Trouver les meilleurs prospects"]
@@ -1085,7 +1095,8 @@ Réponds au format JSON STRICT (rien d'autre, pas de markdown), avec cette struc
   "body": "<corps de l'email en français, ton professionnel et chaleureux, 120-180 mots, avec formule de politesse d'ouverture et de clôture, SANS placeholder du type [Votre nom] à part une signature générique 'L'équipe BelgoData'>"
 }}
 
-Le mail doit s'appuyer sur les forces/l'argumentaire ci-dessus quand disponibles, rester concret et non générique, et donner une raison précise de contacter CETTE entreprise en particulier.
+Le mail doit être fluide, précis et adapté à cette entreprise.
+Évite les formules génériques ; appuie-toi sur une force ou un élément concret de l'analyse pour rendre le message crédible.
 """
 
 COMPARE_PROMPT = """Tu es un expert en stratégie commerciale B2B en Belgique.
@@ -1227,12 +1238,12 @@ def generate_report_node(state: AgentState) -> AgentState:
     temp_label = {"chaud": "Chaud", "tiede": "Tiède", "froid": "Froid"}.get(temperature, temperature)
     state["report"] = report_doc
     state["response"] = (
-        f"📊 **Bilan stratégique généré avec succès pour {prospect.get('name')}**\n\n"
-        f"• **Score global** : {analysis.get('score')}/100\n"
-        f"• **Température** : {temp_emoji} {temp_label} — {temperature_reason}\n"
-        f"• **Présence digitale** : {analysis.get('presence_digitale')}\n"
-        f"• **Analyse** : {analysis.get('analyse')}\n\n"
-        f"💡 *Données consolidées avec {len(web_results)} source(s) externes du Web.*"
+        f"📊 Bilan stratégique généré avec succès pour {prospect.get('name')}\n\n"
+        f"• Score global : {analysis.get('score')}/100\n"
+        f"• Température : {temp_emoji} {temp_label} — {temperature_reason}\n"
+        f"• Présence digitale : {analysis.get('presence_digitale')}\n"
+        f"• Analyse : {analysis.get('analyse')}\n\n"
+        f"💡 Données consolidées avec {len(web_results)} source(s) externes du Web."
     )
     state["suggested_actions"] = []
     return state
@@ -1312,11 +1323,11 @@ def generate_email_node(state: AgentState) -> AgentState:
 
     state["email_draft"] = {"subject": subject, "body": body, "prospect_id": str(prospect["_id"])}
     state["response"] = (
-        f"✉️ **Email de prospection prêt pour {prospect.get('name')}**\n\n"
-        f"**Objet :** {subject}\n\n"
+        f"✉️ Email de prospection prêt pour {prospect.get('name')}\n\n"
+        f"Objet : {subject}\n\n"
         f"{body}\n\n"
-        f"💡 *Copiez-collez directement dans votre client mail.*"
-        + ("" if latest_report else "\n\n_Astuce : générez d'abord un bilan complet sur cette entreprise pour un email encore plus personnalisé._")
+        f"💡 Copiez-collez directement dans votre client mail."
+        + ("" if latest_report else "\n\nAstuce : générez d'abord un bilan complet sur cette entreprise pour un email encore plus personnalisé.")
     )
     state["suggested_actions"] = []
     return state
@@ -1398,13 +1409,13 @@ def compare_prospects_node(state: AgentState) -> AgentState:
 
     state["comparison"] = {"prospects": found, "ranking": ranking, "recommendation": recommendation}
 
-    lines = [f"⚖️ **Comparaison de {len(found)} prospects**\n"]
+    lines = [f"⚖️ Comparaison de {len(found)} prospects\n"]
     for i, name in enumerate(ranking, start=1):
         p = next((x for x in found if x["name"] == name), None)
         if not p:
             continue
         emoji = TEMPERATURE_EMOJI.get(p["temperature"], "")
-        lines.append(f"{i}. **{name}** — score {p['score'] if p['score'] is not None else '?'}/100 {emoji}")
+        lines.append(f"{i}. {name} — score {p['score'] if p['score'] is not None else '?'}/100 {emoji}")
     lines.append(f"\n💡 {recommendation}")
     if not_found:
         lines.append(f"\n_Non trouvé(s) en base : {', '.join(not_found)}_")
@@ -1445,10 +1456,10 @@ def delete_all_prospects_node(state: AgentState) -> AgentState:
     if not state.get("delete_all_confirm"):
         _create_pending_confirmation(db, session_id, user_id, "delete_all", filter_query, total)
         state["response"] = (
-            f"⚠️ Vous êtes sur le point de supprimer **TOUTE la base de prospects partagée** "
+            f"⚠️ Vous êtes sur le point de supprimer TOUTE la base de prospects partagée "
             f"({total} prospect(s), tous comptes confondus — Admin, collaborateurs et scrapes automatiques — "
             f"archivage 30 jours). "
-            f"Répondez explicitement **'oui, supprime tout'** dans les "
+            f"Répondez explicitement 'oui, supprime tout' dans les "
             f"{DELETE_CONFIRMATION_TTL_SECONDS // 60} minutes pour confirmer."
         )
         state["suggested_actions"] = ["Oui, supprime tout", "Annuler"]
@@ -1481,7 +1492,7 @@ def delete_all_prospects_node(state: AgentState) -> AgentState:
 
     state["prospects_sample"] = []
     state["scraped_count"] = result.modified_count
-    state["response"] = f"🗑️ La base partagée a été vidée : **{result.modified_count} prospect(s)** archivé(s) (récupérables 30 jours)."
+    state["response"] = f"🗑️ La base partagée a été vidée : {result.modified_count} prospect(s) archivé(s) (récupérables 30 jours)."
     state["suggested_actions"] = []
     return state
 
@@ -1496,7 +1507,7 @@ def general_node(state: AgentState) -> AgentState:
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            fallback_text="Le service IA est momentanément indisponible, mais je peux toujours vous aider à lancer une recherche de prospects ou à consulter votre base."
+            fallback_text="Le service IA est momentanément indisponible. Je reste disponible pour vous aider à lancer une recherche de prospects ou à consulter votre base."
         )
     except Exception:
         raw = "Le service IA est momentanément indisponible, mais je peux toujours vous aider à lancer une recherche de prospects ou à consulter votre base."
