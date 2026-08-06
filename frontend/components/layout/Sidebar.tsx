@@ -122,7 +122,7 @@ export default function Sidebar() {
       </div>
 
       {/* Navigation principale */}
-      <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-visible [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
+      <nav className="sidebar-nav flex-1 px-3 py-4 overflow-y-auto overflow-x-visible [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
         <ul className="space-y-1">
           {navItems
             .filter((item) => !item.roles || (mounted && item.roles.includes(user?.role || "")))
@@ -272,7 +272,7 @@ export default function Sidebar() {
           </button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 overflow-y-auto overflow-x-visible [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
+        <nav className="sidebar-nav flex-1 px-3 py-4 overflow-y-auto overflow-x-visible [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/25">
           <ul className="space-y-1">
             {navItems
               .filter((item) => !item.roles || (mounted && item.roles.includes(user?.role || "")))

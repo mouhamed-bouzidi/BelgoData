@@ -107,3 +107,14 @@ body {
   background: rgba(255,255,255,0.18);
   animation: float 6s ease-in-out infinite;
 }
+
+/* Hide native scrollbar for the sidebar while keeping content scrollable */
+.sidebar-nav {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.sidebar-nav::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
