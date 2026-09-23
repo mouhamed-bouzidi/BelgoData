@@ -154,7 +154,7 @@ export default function UserDashboardPage() {
 
   if (authLoading || loading) {
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/40">
+      <div className="min-h-[80vh] flex flex-col items-center justify-center space-y-4 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50">
         <div className="relative">
           <div className="w-12 h-12 border-4 border-violet-100 rounded-full"></div>
           <div className="w-12 h-12 border-4 border-[#6d5ef0] border-t-transparent rounded-full animate-spin absolute inset-0"></div>

@@ -24,14 +24,43 @@ from services.deep_scraper import deep_scraping_prospect
 # Configuration du Logger pour le monitoring Docker
 logger = logging.getLogger(__name__)
 
+
+def _emit_groq_alert(model: str, exc: Exception, *, fallback_used: bool) -> None:
+    """Signal visuel fort pour les incidents Groq afin d'éviter de masquer silencieusement les dépréciations de modèles."""
+    logger.error(
+        "ALERTE GROQ: appel échoué | model=%s | fallback_used=%s | error=%s",
+        model,
+        fallback_used,
+        exc,
+        exc_info=True,
+    )
+
+    # Garder un signal supplémentaire facilement exploitable côté logs agrégés.
+    # Cela permet de brancher plus tard Sentry, Datadog, CloudWatch, etc.
+    if os.getenv("SENTRY_DSN") or os.getenv("MONITORING_ENABLED") == "true":
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(exc, tags={"service": "ai-service", "provider": "groq", "model": model})
+        except Exception:
+            pass
+
+
 # Initialisation du client Groq
 client = None
 api_key = os.getenv("GROQ_API_KEY")
-DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "Qwen3.8-27B")
+DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 def get_groq_model_name() -> str:
-    return os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+    model = os.getenv("GROQ_MODEL") or DEFAULT_GROQ_MODEL
+    if model in {"Qwen3.8-27B", "Qwen3.8-27b"}:
+        logger.warning(
+            "Modèle Groq invalide détecté dans GROQ_MODEL (%s). Utilisation du modèle par défaut %s.",
+            model,
+            DEFAULT_GROQ_MODEL,
+        )
+        return DEFAULT_GROQ_MODEL
+    return model
 
 
 if api_key and Groq is not None:
@@ -65,8 +94,9 @@ def _safe_groq_call(*, model: str, messages: list, temperature: float = 0.0, res
         completion = client.chat.completions.create(**kwargs)
         return completion.choices[0].message.content.strip()
     except Exception as exc:
-        logger.warning("Appel Groq échoué : %s", exc)
-        if fallback_text is not None:
+        fallback_used = fallback_text is not None
+        _emit_groq_alert(model, exc, fallback_used=fallback_used)
+        if fallback_used:
             return fallback_text
         raise
 

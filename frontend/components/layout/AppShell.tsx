@@ -33,7 +33,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         <Menu size={20} />
       </button>
       <main
-        className="flex-1 min-h-screen bg-content-bg transition-[margin-left] duration-300 ease-in-out"
+        className="flex-1 min-h-screen bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 transition-[margin-left] duration-300 ease-in-out"
         style={{ marginLeft: mainMarginLeft }}
       >
         {children}

@@ -70,7 +70,7 @@ export default function ReportPage() {
 
   if (loading) {
     return (
-      <div className="p-12 min-h-screen bg-gradient-to-br from-purple-50/40 via-white to-fuchsia-50/30 flex items-center justify-center">
+      <div className="p-12 min-h-screen bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 flex items-center justify-center">
         <div className="inline-flex items-center gap-3 text-gray-400 font-medium">
           <div className="w-5 h-5 rounded-full border-2 border-purple-200 border-t-purple-500 animate-spin" />
           Chargement du rapport…
@@ -101,7 +101,7 @@ export default function ReportPage() {
       : "from-rose-400 to-red-500";
 
   return (
-    <div className="p-8 bg-gradient-to-br from-purple-50/40 via-white to-fuchsia-50/30 min-h-screen text-gray-900">
+    <div className="p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen text-gray-900">
       {/* Breadcrumb */}
       <div className="text-sm text-gray-400 mb-3 flex items-center gap-2">
         <span>Agent IA</span> <span className="text-purple-300">›</span> <span>Bilan de prospection</span>{" "}

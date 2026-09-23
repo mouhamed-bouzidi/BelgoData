@@ -116,7 +116,7 @@ export default function ReportsListPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   return (
-    <div className="p-4 sm:p-8 min-h-screen bg-gradient-to-br from-purple-50/40 via-white to-fuchsia-50/30">
+    <div className="p-4 sm:p-8 min-h-screen bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50">
       {/* Header */}
       <div className="flex flex-col gap-4 justify-between mb-8 sm:flex-row sm:items-center">
         <div>

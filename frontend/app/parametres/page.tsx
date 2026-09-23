@@ -141,7 +141,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-8 bg-content-bg min-h-screen text-gray-900">
+    <div className="p-4 sm:p-8 bg-gradient-to-br from-violet-50/40 via-white to-slate-50/50 min-h-screen text-gray-900">
       <div className="mx-auto max-w-[1400px]">
         <form onSubmit={handleSubmit}>
         {/* Header */}
