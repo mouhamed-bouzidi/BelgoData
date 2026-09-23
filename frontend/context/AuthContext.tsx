@@ -52,36 +52,65 @@ function isSavedUserSafe(rawUser: string | null): boolean {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+
+    const savedToken = localStorage.getItem("belgodata_token") || localStorage.getItem("token");
+    if (!isTokenSafe(savedToken)) {
+      localStorage.removeItem("belgodata_token");
+      localStorage.removeItem("token");
+      localStorage.removeItem("belgodata_user");
+      return null;
+    }
+
+    const normalizedToken = savedToken.trim();
+    localStorage.setItem("belgodata_token", normalizedToken);
+    localStorage.setItem("token", normalizedToken);
+    return normalizedToken;
+  });
+
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window === "undefined") return null;
+
+    const savedUser = localStorage.getItem("belgodata_user");
+    if (!savedUser || !isSavedUserSafe(savedUser)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(savedUser) as User;
+    } catch (error) {
+      console.error("Impossible de parser l'utilisateur stocké", error);
+      localStorage.removeItem("belgodata_user");
+      return null;
+    }
+  });
+
+  const [loading, setLoading] = useState(false);
+
+  function clearAuthState() {
+    setToken(null);
+    setUser(null);
+    clearLegacyAuthCookies();
+    localStorage.removeItem("belgodata_token");
+    localStorage.removeItem("token");
+    localStorage.removeItem("belgodata_user");
+    delete axios.defaults.headers.common["Authorization"];
+  }
 
   useEffect(() => {
     clearLegacyAuthCookies();
-
-    const savedToken = localStorage.getItem("belgodata_token");
-    const savedUser = localStorage.getItem("belgodata_user");
-
-    if (isTokenSafe(savedToken)) {
-      setToken(savedToken);
-      axios.defaults.headers.common["Authorization"] = `Bearer ${savedToken}`;
-      setAuthTokenCookie(savedToken);
-    } else {
-      localStorage.removeItem("belgodata_token");
-      localStorage.removeItem("belgodata_user");
-    }
-
-    if (savedUser && isSavedUserSafe(savedUser)) {
-      try {
-        setUser(JSON.parse(savedUser) as User);
-      } catch (error) {
-        console.error("Impossible de parser l'utilisateur stocké", error);
-        localStorage.removeItem("belgodata_user");
-      }
-    }
-
-    setLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (token) {
+      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      setAuthTokenCookie(token);
+      return;
+    }
+
+    delete axios.defaults.headers.common["Authorization"];
+  }, [token]);
 
   function getSafeUser(user: Partial<User>) {
     return {
@@ -94,30 +123,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-      axios.get("/api/auth/me")
-        .then((res) => {
-          const backendUser = res.data;
-          const normalizedUser: User = getSafeUser({
-            id: backendUser._id || backendUser.id,
-            name: backendUser.name,
-            email: backendUser.email,
-            role: backendUser.role,
-            phone: backendUser.phone,
-          });
-          setUser(normalizedUser);
-          if (isSavedUserSafe(JSON.stringify(normalizedUser))) {
-            localStorage.setItem("belgodata_user", JSON.stringify(normalizedUser));
-          }
-        })
-        .catch((error) => {
-          console.error("Impossible de charger l'utilisateur depuis l'API", error);
-        });
-    } else {
+    if (!token) {
       delete axios.defaults.headers.common["Authorization"];
+      return;
     }
+
+    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+
+    axios.get("/api/auth/me")
+      .then((res) => {
+        const backendUser = res.data;
+        const normalizedUser: User = getSafeUser({
+          id: backendUser._id || backendUser.id,
+          name: backendUser.name,
+          email: backendUser.email,
+          role: backendUser.role,
+          phone: backendUser.phone,
+        });
+        setUser(normalizedUser);
+        if (isSavedUserSafe(JSON.stringify(normalizedUser))) {
+          localStorage.setItem("belgodata_user", JSON.stringify(normalizedUser));
+        }
+      })
+      .catch((error) => {
+        const status = error?.response?.status;
+        if (status === 401 || status === 403) {
+          clearAuthState();
+          return;
+        }
+
+        console.error("Impossible de charger l'utilisateur depuis l'API", error);
+      });
   }, [token]);
 
   async function login(email: string, password: string) {
@@ -130,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(safeUser);
       if (isTokenSafe(t)) {
         localStorage.setItem("belgodata_token", t);
+        localStorage.setItem("token", t);
         setAuthTokenCookie(t);
       }
       if (isSavedUserSafe(JSON.stringify(safeUser))) {
@@ -151,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(safeUser);
       if (isTokenSafe(t)) {
         localStorage.setItem("belgodata_token", t);
+        localStorage.setItem("token", t);
         setAuthTokenCookie(t);
       }
       if (isSavedUserSafe(JSON.stringify(safeUser))) {
@@ -163,12 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
-    setToken(null);
-    setUser(null);
-    clearLegacyAuthCookies();
-    localStorage.removeItem("belgodata_token");
-    localStorage.removeItem("belgodata_user");
-    delete axios.defaults.headers.common["Authorization"];
+    clearAuthState();
   }
   function updateUser(updatedUser: Partial<User>) {
   const newUser = { ...user, ...updatedUser } as User;

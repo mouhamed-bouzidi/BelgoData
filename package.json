@@ -3,4 +3,10 @@
     "axios": "^1.18.1",
     "d3": "^7.9.0"
   }
+  "scripts": {
+    "precommit": "echo 'precommit hook placeholder'",
+    "start": "node backend/server.js",
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "cd backend && nodemon server.js"
+  }
 }

@@ -4,6 +4,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import { useAuth } from "@/context/AuthContext";
 import {
   Bot,
@@ -105,6 +108,69 @@ const defaultActions = [
   "Cafés à 2000 Anvers",
   "Pharmacies à 5000 Namur",
 ];
+
+/* ─────────────────────────────────────────────────────────────
+   Rendu Markdown des messages de l'agent
+   (gras **, listes, séparateurs ---, liens, code, titres…)
+   ───────────────────────────────────────────────────────────── */
+const markdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => (
+    <p className="mb-1.5 last:mb-0">{children}</p>
+  ),
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold text-slate-900">{children}</strong>
+  ),
+  em: ({ children }: { children?: React.ReactNode }) => (
+    <em className="italic">{children}</em>
+  ),
+  ul: ({ children }: { children?: React.ReactNode }) => (
+    <ul className="list-disc pl-4 space-y-0.5 my-1.5">{children}</ul>
+  ),
+  ol: ({ children }: { children?: React.ReactNode }) => (
+    <ol className="list-decimal pl-4 space-y-0.5 my-1.5">{children}</ol>
+  ),
+  li: ({ children }: { children?: React.ReactNode }) => (
+    <li className="text-[14px] leading-relaxed">{children}</li>
+  ),
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-indigo-600 underline hover:text-indigo-700"
+    >
+      {children}
+    </a>
+  ),
+  hr: () => <hr className="my-2.5 border-slate-200" />,
+  code: ({ children }: { children?: React.ReactNode }) => (
+    <code className="bg-slate-100 text-indigo-700 px-1.5 py-0.5 rounded text-[13px] font-mono">
+      {children}
+    </code>
+  ),
+  h1: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="font-bold text-slate-900 text-[15px] mt-1.5 mb-1">{children}</h3>
+  ),
+  h2: ({ children }: { children?: React.ReactNode }) => (
+    <h3 className="font-bold text-slate-900 text-[15px] mt-1.5 mb-1">{children}</h3>
+  ),
+  h3: ({ children }: { children?: React.ReactNode }) => (
+    <h4 className="font-semibold text-slate-900 text-[14px] mt-1.5 mb-1">{children}</h4>
+  ),
+  blockquote: ({ children }: { children?: React.ReactNode }) => (
+    <blockquote className="border-l-2 border-indigo-200 pl-3 italic text-slate-600 my-1.5">
+      {children}
+    </blockquote>
+  ),
+};
+
+function AgentMessageContent({ content }: { content: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
+      {content}
+    </ReactMarkdown>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────────
    Helpers UI (locaux, purement visuels)
@@ -818,13 +884,23 @@ export default function AgentPage() {
                       }`}
                     >
                       <div
-                        className={`px-4 py-2.5 text-[14px] leading-relaxed ${
+                        className={`px-4 py-3 text-[14px] leading-relaxed ${
                           msg.role === "user"
-                            ? "bg-indigo-600 text-white rounded-2xl rounded-tr-md font-medium shadow-sm"
-                            : "text-slate-800 whitespace-pre-line"
+                            ? "bg-indigo-600 text-white rounded-[22px] rounded-tr-md font-medium shadow-sm"
+                            : "rounded-[22px] border border-indigo-100/80 bg-gradient-to-br from-white via-indigo-50/70 to-violet-50/80 text-slate-800 shadow-[0_10px_30px_-14px_rgba(79,70,229,0.35)]"
                         }`}
                       >
-                        {msg.content}
+                        {msg.role === "agent" && (
+                          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-indigo-700 ring-1 ring-indigo-100">
+                            <Bot size={11} />
+                            Assistant
+                          </div>
+                        )}
+                        {msg.role === "agent" ? (
+                          <AgentMessageContent content={msg.content} />
+                        ) : (
+                          <span className="whitespace-pre-line">{msg.content}</span>
+                        )}
                       </div>
 
                       {/* Actions contextuelles sur la bulle */}
@@ -1105,12 +1181,12 @@ export default function AgentPage() {
                       className="flex items-center justify-between text-xs text-indigo-700 bg-indigo-50/60 p-2.5 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition"
                     >
                       <div className="flex items-center gap-2.5 truncate">
-                        <ExternalLink size={13} />
+                        <ExternalLink size={13} className="text-indigo-500" />
                         <span className="truncate font-semibold">
                           {activeReport.website.replace(/^https?:\/\//, "")}
                         </span>
                       </div>
-                      <ChevronRight size={13} />
+                      <ChevronRight size={13} className="text-indigo-500" />
                     </a>
                   )}
                 </div>
@@ -1262,12 +1338,12 @@ export default function AgentPage() {
                     <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1 text-[11px] text-slate-500">
                       {p.phone && (
                         <span className="inline-flex items-center gap-1">
-                          <Phone size={10} /> {p.phone}
+                          <Phone size={10} className="text-indigo-500" /> {p.phone}
                         </span>
                       )}
                       {p.email && (
                         <span className="inline-flex items-center gap-1 truncate max-w-[180px]">
-                          <Mail size={10} /> {p.email}
+                          <Mail size={10} className="text-indigo-500" /> {p.email}
                         </span>
                       )}
                       {p.website && (
@@ -1277,7 +1353,7 @@ export default function AgentPage() {
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-indigo-600 hover:underline"
                         >
-                          <ExternalLink size={10} /> Site
+                          <ExternalLink size={10} className="text-indigo-500" /> Site
                         </a>
                       )}
                       {!p.phone && !p.email && !p.website && (
@@ -1385,6 +1461,6 @@ export default function AgentPage() {
 }
 
 export function RootPage() {
-  redirect("/agent");
+  redirect("/page.tsx");
   return null;
 }

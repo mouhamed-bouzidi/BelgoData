@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 # Initialisation du client Groq
 client = None
 api_key = os.getenv("GROQ_API_KEY")
+DEFAULT_GROQ_MODEL = os.getenv("GROQ_MODEL", "Qwen3.8-27B")
+
+
+def get_groq_model_name() -> str:
+    return os.getenv("GROQ_MODEL", DEFAULT_GROQ_MODEL)
+
+
 if api_key and Groq is not None:
     try:
         client = Groq(api_key=api_key)
@@ -80,11 +87,11 @@ GENERAL_PROMPT = """Tu es l'assistant IA de BelgoData, une plateforme de prospec
 Réponds naturellement en français, de manière chaleureuse, professionnelle et utile.
 
 **Style requis :**
-- **Titres en gras**
-- **Sous-titres en gras**
+- phrases courtes et structure claires
 - listes à puces
 - séparateurs `---`
-- **mots importants en gras**
+- mets en gras seulement les mots-clés ou les éléments vraiment importants
+- évite d'abuser du gras sur de longues portions de texte
 - emojis uniquement pour guider l'œil, jamais pour décorer
 
 Sois moderne, structuré, facile à lire en moins de 5 secondes.
@@ -407,7 +414,7 @@ Retourne UNIQUEMENT le JSON, aucun texte superflu autour.
     for attempt in range(1, max_attempts + 1):
         try:
             raw_content = _safe_groq_call(
-                model="llama-3.3-70b-versatile",
+                model=get_groq_model_name(),
                 messages=[
                     {"role": "system", "content": prompt_system},
                     {"role": "user", "content": clean_query}
@@ -1178,7 +1185,7 @@ def generate_report_node(state: AgentState) -> AgentState:
 
     try:
         raw = _safe_groq_call(
-            model="llama-3.3-70b-versatile",
+            model=get_groq_model_name(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             fallback_text='{"score": 50, "presence_digitale": "Moyenne", "analyse": "Le rapport automatisé est momentanément indisponible. Les données locales restent disponibles pour une première lecture.", "forces": [], "faiblesses": [], "argumentaire": "", "temperature": "tiede", "temperature_reason": "Données partielles en l\'absence du service IA."}'
@@ -1305,7 +1312,7 @@ def generate_email_node(state: AgentState) -> AgentState:
 
     try:
         raw = _safe_groq_call(
-            model="llama-3.3-70b-versatile",
+            model=get_groq_model_name(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
             fallback_text='{"subject": "Collaboration", "body": "Bonjour,\n\nJe vous contacte pour présenter notre plateforme BelgoData et proposer une première discussion autour de vos besoins de prospection.\n\nCordialement,"}'
@@ -1337,6 +1344,7 @@ def compare_prospects_node(state: AgentState) -> AgentState:
     """
     Compare 2 entreprises (ou plus) nommées explicitement par l'utilisateur
     et propose un ordre de priorité de prospection argumenté.
+    Génère automatiquement les rapports manquants pour avoir des scores comparables.
     """
     db = get_db()
     collection = db["prospects"]
@@ -1359,10 +1367,96 @@ def compare_prospects_node(state: AgentState) -> AgentState:
         if not prospect:
             not_found.append(name)
             continue
+        
+        # Chercher le rapport existant
         latest_report = db["reports"].find_one(
             {"prospect_id": str(prospect["_id"])},
             sort=[("createdAt", -1)],
         )
+        
+        # Si pas de rapport avec score, générer un automatiquement
+        if not latest_report or latest_report.get("score") is None:
+            address_str = ", ".join(filter(None, [
+                prospect.get("address", {}).get("street"),
+                prospect.get("address", {}).get("city"),
+                prospect.get("address", {}).get("postcode"),
+            ])) or "Non renseignée"
+
+            web_results = search_company_web(
+                name=prospect.get("name"),
+                city=prospect.get("address", {}).get("city"),
+            )
+            web_context = format_web_context(web_results)
+
+            prompt = REPORT_PROMPT.format(
+                name=prospect.get("name"),
+                category=prospect.get("category"),
+                address=address_str,
+                phone=prospect.get("phone") or "Non renseigné",
+                email=prospect.get("email") or "Non renseigné",
+                website=prospect.get("website") or "Non renseigné",
+                web_context=web_context,
+            )
+
+            try:
+                raw = _safe_groq_call(
+                    model=get_groq_model_name(),
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    fallback_text='{"score": 50, "presence_digitale": "Moyenne", "analyse": "Analyse indisponible", "forces": [], "faiblesses": [], "argumentaire": "", "temperature": "tiede", "temperature_reason": "Données limitées"}'
+                )
+            except Exception:
+                raw = '{"score": 50, "presence_digitale": "Moyenne", "analyse": "Analyse indisponible", "forces": [], "faiblesses": [], "argumentaire": "", "temperature": "tiede", "temperature_reason": "Données limitées"}'
+
+            try:
+                analysis = json.loads(raw)
+            except json.JSONDecodeError:
+                analysis = {
+                    "score": 50, "presence_digitale": "Moyenne",
+                    "analyse": "L'analyse automatisée est momentanément indisponible.", 
+                    "forces": [], "faiblesses": [], "argumentaire": "",
+                }
+
+            score_value = analysis.get("score", 50)
+            temperature = analysis.get("temperature")
+            temperature_reason = analysis.get("temperature_reason")
+            if temperature not in ("chaud", "tiede", "froid"):
+                temperature, temperature_reason = _fallback_temperature(prospect, score_value, web_results)
+
+            # Créer et sauvegarder le rapport
+            report_doc = {
+                "prospect_id": str(prospect["_id"]),
+                "name": prospect.get("name"),
+                "category": prospect.get("category"),
+                "address": prospect.get("address"),
+                "phone": prospect.get("phone"),
+                "email": prospect.get("email"),
+                "website": prospect.get("website"),
+                "source": prospect.get("source"),
+                "score": analysis.get("score", 50),
+                "presence_digitale": analysis.get("presence_digitale", "Moyenne"),
+                "analyse": analysis.get("analyse", ""),
+                "forces": analysis.get("forces", []),
+                "faiblesses": analysis.get("faiblesses", []),
+                "argumentaire": analysis.get("argumentaire", ""),
+                "temperature": temperature,
+                "temperature_reason": temperature_reason,
+                "web_sources": web_results,
+                "requestedBy": {
+                    "userId": state.get("user_id"),
+                    "userName": state.get("user_name"),
+                },
+                "createdAt": datetime.now(timezone.utc),
+            }
+            
+            reports_collection = db["reports"]
+            result = reports_collection.insert_one(report_doc)
+            collection.update_one(
+                {"_id": prospect["_id"]},
+                {"$set": {"score": score_value, "temperature": temperature}}
+            )
+            latest_report = report_doc
+        
         found.append({
             "name": prospect.get("name"),
             "category": prospect.get("category"),
@@ -1391,7 +1485,7 @@ def compare_prospects_node(state: AgentState) -> AgentState:
     prompt = COMPARE_PROMPT.format(prospects_context=prospects_context)
     try:
         raw = _safe_groq_call(
-            model="llama-3.3-70b-versatile",
+            model=get_groq_model_name(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             fallback_text='{"ranking": [], "recommendation": "Classement basé sur les données disponibles en base."}'
@@ -1410,12 +1504,33 @@ def compare_prospects_node(state: AgentState) -> AgentState:
     state["comparison"] = {"prospects": found, "ranking": ranking, "recommendation": recommendation}
 
     lines = [f"⚖️ Comparaison de {len(found)} prospects\n"]
+    
+    # Create a comparison table with scores and temperatures
+    prospects_by_rank = []
     for i, name in enumerate(ranking, start=1):
         p = next((x for x in found if x["name"] == name), None)
         if not p:
             continue
         emoji = TEMPERATURE_EMOJI.get(p["temperature"], "")
-        lines.append(f"{i}. {name} — score {p['score'] if p['score'] is not None else '?'}/100 {emoji}")
+        score_display = f"{p['score']}/100" if p['score'] is not None else "N/A"
+        temp_display = f"{emoji} {p['temperature'].capitalize()}" if p['temperature'] else "Inconnue"
+        prospects_by_rank.append({
+            "rank": i,
+            "name": name,
+            "score": p['score'],
+            "score_display": score_display,
+            "temperature": temp_display,
+            "category": p.get("category", "")
+        })
+        lines.append(f"{i}. **{name}** — score **{score_display}** {temp_display}")
+    
+    # Add a score comparison summary
+    if prospects_by_rank:
+        max_score = max([p["score"] for p in prospects_by_rank if p["score"] is not None], default=0) or 0
+        min_score = min([p["score"] for p in prospects_by_rank if p["score"] is not None], default=0) or 0
+        if max_score > 0:
+            lines.append(f"\n📊 Écart de score : {max_score - min_score} points")
+    
     lines.append(f"\n💡 {recommendation}")
     if not_found:
         lines.append(f"\n_Non trouvé(s) en base : {', '.join(not_found)}_")
@@ -1504,7 +1619,7 @@ def general_node(state: AgentState) -> AgentState:
     prompt = GENERAL_PROMPT.format(query=state["user_query"])
     try:
         raw = _safe_groq_call(
-            model="llama-3.3-70b-versatile",
+            model=get_groq_model_name(),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             fallback_text="Le service IA est momentanément indisponible. Je reste disponible pour vous aider à lancer une recherche de prospects ou à consulter votre base."

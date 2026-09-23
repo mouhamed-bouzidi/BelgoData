@@ -17,6 +17,7 @@ const conversationsRoutes = require("./routes/conversations");
 const scrapingRoutes = require("./routes/scraping");
 const watchedSearchesRoutes = require("./routes/watchedSearches");
 const notificationsRoutes = require("./routes/notifications");
+const archivesRoutes = require("./routes/archives");
 const { startWatchScheduler } = require("./cron/watchScheduler");
 
 
@@ -38,6 +39,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/reports", reportsRoutes);
 app.use("/api/prospects", prospectsRoutes);
+app.use("/api/archives", archivesRoutes);
 app.use("/api/conversations", conversationsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/settings", settingsRoutes);

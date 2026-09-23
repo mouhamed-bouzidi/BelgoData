@@ -41,6 +41,9 @@ const ProspectSchema = new mongoose.Schema(
     // Spécifique OSM, optionnel pour les autres sources
     osm_id: { type: Number, default: null },
     osm_type: { type: String, default: null },
+
+    // Soft delete
+    deleted: { type: Boolean, default: false },
   },
   {
     timestamps: true,

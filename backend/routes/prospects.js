@@ -130,21 +130,22 @@ router.post("/bulk-delete", authMiddleware, authorizeRoles("Administrateur", "Co
       return res.json({ confirmRequired: true, total, message: "Confirmation requise avant suppression." });
     }
 
-    const result = await Prospect.deleteMany(filter);
+    // Soft delete : marquer comme supprimé au lieu de supprimer définitivement
+    const result = await Prospect.updateMany(filter, { deleted: true });
 
-    if (result.deletedCount > 0) {
+    if (result.modifiedCount > 0) {
       DeletionLog.create({
         userId: req.user.id,
         userName: req.user.name,
         type: "bulk",
-        deletedCount: result.deletedCount,
+        deletedCount: result.modifiedCount,
         filter,
         ip: req.ip || req.headers["x-forwarded-for"] || null,
         userAgent: req.headers["user-agent"] || null,
       }).catch((err) => console.error("⚠️ Échec enregistrement log de suppression:", err.message));
     }
 
-    res.json({ deletedCount: result.deletedCount });
+    res.json({ deletedCount: result.modifiedCount });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -401,10 +402,17 @@ router.get("/:id", async (req, res) => {
 // DELETE /api/prospects/:id
 router.delete("/:id", authMiddleware, authorizeRoles("Administrateur", "Commercial"),async (req, res) => {
   try {
-    const deleted = await Prospect.findByIdAndDelete(req.params.id);
-    if (!deleted) {
+    const prospect = await Prospect.findById(req.params.id);
+    if (!prospect) {
       return res.status(404).json({ error: "Prospect non trouvé" });
     }
+
+    // Soft delete : marquer comme supprimé au lieu de le supprimer définitivement
+    const deleted = await Prospect.findByIdAndUpdate(
+      req.params.id,
+      { deleted: true },
+      { new: true }
+    );
 
     DeletionLog.create({
       userId: req.user.id,
@@ -498,7 +506,8 @@ function cpToProvince(cp) {
 // GET /dashboard/geo-distribution
 router.get("/dashboard/geo-distribution", async (req, res) => {
   try {
-    const rows = await Prospect.find({}, "address.postcode").lean();
+    const activeFilter = { deleted: { $ne: true } };
+    const rows = await Prospect.find(activeFilter, "address.postcode").lean();
 
     const counts = Object.fromEntries(PROVINCES.map((p) => [p.id, 0]));
     for (const row of rows) {
